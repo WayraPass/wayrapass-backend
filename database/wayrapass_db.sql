@@ -194,6 +194,7 @@ CREATE TABLE routes (
     origin              VARCHAR(200) NOT NULL,
     destination         VARCHAR(200) NOT NULL,
     description         VARCHAR(500),
+    capacity            INTEGER NOT NULL,
 
     status              VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
 
@@ -205,7 +206,10 @@ CREATE TABLE routes (
         REFERENCES institutions(id),
 
     CONSTRAINT chk_route_status
-        CHECK (status IN ('ACTIVE', 'INACTIVE'))
+        CHECK (status IN ('ACTIVE', 'INACTIVE')),
+
+    CONSTRAINT chk_route_capacity
+        CHECK (capacity > 0)
 );
 
 
