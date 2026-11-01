@@ -17,5 +17,16 @@ $$;
 ALTER TABLE routes
     ALTER COLUMN capacity SET NOT NULL;
 
-ALTER TABLE routes
-    ADD CONSTRAINT chk_route_capacity CHECK (capacity > 0);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'routes'::regclass
+          AND conname = 'chk_route_capacity'
+    ) THEN
+        ALTER TABLE routes
+            ADD CONSTRAINT chk_route_capacity CHECK (capacity > 0);
+    END IF;
+END
+$$;
