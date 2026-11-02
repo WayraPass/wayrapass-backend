@@ -24,16 +24,39 @@ public interface RouteRepository extends JpaRepository<Route,Long>{
    and rs.active = true
    and s.active = true
    and sc.active = true
-   and i.id = :institutionId
+   and (:institutionId is null or i.id = :institutionId)
    and (:district is null or lower(s.district) = lower(cast(:district as string)))
    and (:routeId is null or r.id = :routeId)
+   and (:stopId is null or s.id = :stopId)
   order by r.code, rs.stopOrder, sc.dayOfWeek, sc.departureTime
   """)
  List<RouteSearchProjection> searchAvailableOptions(@Param("institutionId") Long institutionId,
                                                      @Param("district") String district,
-                                                     @Param("routeId") Long routeId);
+                                                     @Param("routeId") Long routeId,
+                                                     @Param("stopId") Long stopId);
 
  default List<RouteSearchProjection> searchAvailableOptions(Long institutionId,String district){
-  return searchAvailableOptions(institutionId,district,null);
+  return searchAvailableOptions(institutionId,district,null,null);
  }
+ default List<RouteSearchProjection> searchAvailableOptions(Long institutionId,String district,Long routeId){
+  return searchAvailableOptions(institutionId,district,routeId,null);
+ }
+
+ @EntityGraph(attributePaths="institution")
+ @Query("""
+  select distinct r from Route r join r.institution i
+  where r.status=com.wayrapass.model.RouteStatus.ACTIVE and i.active=true
+   and (:institutionId is null or i.id=:institutionId)
+   and (:routeId is null or r.id=:routeId)
+   and exists (select rs.id from RouteStop rs join rs.stop s
+               where rs.route=r and rs.active=true and s.active=true
+                and (:district is null or lower(s.district)=lower(cast(:district as string)))
+                and (:stopId is null or s.id=:stopId))
+   and exists (select sc.id from RouteSchedule sc where sc.route=r and sc.active=true)
+  order by r.code
+  """)
+ List<Route> searchAvailableRoutes(@Param("institutionId") Long institutionId,
+                                   @Param("district") String district,
+                                   @Param("routeId") Long routeId,
+                                   @Param("stopId") Long stopId);
 }

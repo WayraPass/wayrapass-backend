@@ -101,6 +101,9 @@ public class AuthService {
             }
             Institution institution = institutions.findById(request.institutionId())
                     .orElseThrow(() -> new ResourceNotFoundException("Institución no encontrada."));
+            if (!institution.isActive()) {
+                throw new BusinessRuleException("La institución seleccionada no está disponible para registro.");
+            }
             if (request.studentCode() != null
                     && students.existsByInstitutionIdAndStudentCodeIgnoreCase(
                     institution.getId(), request.studentCode().trim())) {

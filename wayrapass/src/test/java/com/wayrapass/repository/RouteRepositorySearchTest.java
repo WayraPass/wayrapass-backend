@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 @ActiveProfiles("test")
 class RouteRepositorySearchTest {
     @Autowired RouteRepository routes;
+    @Autowired StopRepository stops;
     @Autowired EntityManager entityManager;
 
     private Institution institution;
@@ -76,6 +77,15 @@ class RouteRepositorySearchTest {
 
         assertEquals(1, matches.size());
         assertEquals("R-12", matches.getFirst().getRouteCode());
+        assertEquals(2, routes.searchAvailableRoutes(null, null, null, null).size());
+        assertEquals(2, routes.searchAvailableRoutes(
+                institution.getId(), null, null, null).size());
+        assertEquals(java.util.List.of(selected), routes.searchAvailableRoutes(
+                null, "San Borja", null, selectedStop.getId()));
+        assertEquals(java.util.List.of(selected), routes.searchAvailableRoutes(
+                null, null, selected.getId(), null));
+        assertEquals(java.util.List.of(), routes.searchAvailableRoutes(
+                null, null, selected.getId(), otherStop.getId()));
     }
 
     @Test
@@ -90,6 +100,23 @@ class RouteRepositorySearchTest {
 
         assertEquals(1, matches.size());
         assertEquals("R-ALL", matches.getFirst().getRouteCode());
+    }
+
+    @Test
+    void pickupCatalogIncludesUnusedPublicStopsAndExcludesTerminalCampus() {
+        Route route = route("R-CATALOG", RouteStatus.ACTIVE);
+        Stop pickup = stop("Plaza San Miguel", "San Miguel", true);
+        Stop campus = stop("Campus UPC", "Santiago de Surco", true);
+        Stop unusedPublicStop = stop("Parque Municipal", "Barranco", true);
+        routeStop(route, pickup, true, 1, 0);
+        routeStop(route, campus, true, 2, 30);
+        schedule(route, true, LocalTime.of(8, 0));
+        entityManager.flush();
+
+        assertEquals(java.util.List.of("Barranco", "San Miguel"), stops.findAvailablePickupDistricts());
+        assertEquals(java.util.List.of(pickup), stops.findAvailablePickupsByDistrict("san miguel"));
+        assertEquals(java.util.List.of(unusedPublicStop), stops.findAvailablePickupsByDistrict("Barranco"));
+        assertEquals(java.util.List.of(), stops.findAvailablePickupsByDistrict("Santiago de Surco"));
     }
 
     private Route route(String code, RouteStatus status) {

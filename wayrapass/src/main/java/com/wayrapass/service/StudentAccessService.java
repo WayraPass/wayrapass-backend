@@ -1,6 +1,7 @@
 package com.wayrapass.service;
 
 import com.wayrapass.dto.request.OperationalRequests;
+import com.wayrapass.dto.response.CatalogResponses;
 import com.wayrapass.dto.response.OperationalResponses;
 import com.wayrapass.exception.BusinessRuleException;
 import com.wayrapass.exception.ConflictException;
@@ -27,6 +28,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class StudentAccessService {
     private final CurrentUser current;
+    private final InstitutionRepository institutions;
     private final StudentRepository students;
     private final StudentFamilyLinkRepository links;
     private final RouteRepository routes;
@@ -125,8 +127,6 @@ public class StudentAccessService {
         Student student = requireCurrentStudent();
         Route route = routes.findById(routeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ruta no encontrada."));
-        if (!route.getInstitution().getId().equals(student.getInstitution().getId()))
-            throw new BusinessRuleException("La ruta pertenece a una institución distinta a la del estudiante.");
         if (route.getStatus() != RouteStatus.ACTIVE || !route.getInstitution().isActive())
             throw new BusinessRuleException("No se puede guardar una ruta que no está disponible.");
         FavoriteRouteId id = new FavoriteRouteId(student.getId(), routeId);
@@ -165,19 +165,31 @@ public class StudentAccessService {
                                                                       String district, LocalTime time,
                                                                       BigDecimal latitude,
                                                                       BigDecimal longitude) {
+        return searchRoutes(institutionId, routeId, district, null, time, latitude, longitude);
+    }
+
+    @Transactional(readOnly = true)
+    public List<OperationalResponses.RouteSearchOption> searchRoutes(Long institutionId, Long routeId,
+                                                                      String district, Long stopId,
+                                                                      LocalTime time, BigDecimal latitude,
+                                                                      BigDecimal longitude) {
         Student student = requireCurrentStudent();
         validateLocation(latitude, longitude);
         if (institutionId != null && institutionId <= 0)
             throw new BusinessRuleException("institutionId debe ser positivo.");
         if (routeId != null && routeId <= 0)
             throw new BusinessRuleException("routeId debe ser positivo.");
+        if (stopId != null && stopId <= 0)
+            throw new BusinessRuleException("stopId debe ser positivo.");
         if (district != null && district.isBlank())
             throw new BusinessRuleException("district no puede estar vacío.");
+
         Long ownInstitutionId = student.getInstitution().getId();
         if (institutionId != null && !institutionId.equals(ownInstitutionId)) return List.of();
-
         String normalizedDistrict = district == null ? null : district.trim();
-        List<RouteSearchProjection> projections = routeId == null
+        List<RouteSearchProjection> projections = stopId != null
+                ? routes.searchAvailableOptions(ownInstitutionId, normalizedDistrict, routeId, stopId)
+                : routeId == null
                 ? routes.searchAvailableOptions(ownInstitutionId, normalizedDistrict)
                 : routes.searchAvailableOptions(ownInstitutionId, normalizedDistrict, routeId);
         if (projections.isEmpty()) return List.of();
@@ -210,6 +222,49 @@ public class StudentAccessService {
                 .map(favorite -> favorite.getRoute().getId()).collect(Collectors.toSet());
         return candidates.stream().map(candidate -> searchOut(candidate,
                 favoriteIds.contains(candidate.projection().getRouteId()), time)).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<CatalogResponses.GroupedRouteSearch> searchGroupedRoutes(Long institutionId, Long routeId,
+                                                                          String district, Long stopId,
+                                                                          LocalTime time) {
+        Student student = requireCurrentStudent();
+        validateSearchIds(institutionId, routeId, stopId);
+        String normalizedDistrict = district == null ? null : district.trim();
+        if (district != null && normalizedDistrict.isEmpty())
+            throw new BusinessRuleException("district no puede estar vacío.");
+        if (institutionId != null && institutions.findById(institutionId).isEmpty())
+            throw new ResourceNotFoundException("Institución no encontrada.");
+        if (routeId != null && routes.findById(routeId).isEmpty())
+            throw new ResourceNotFoundException("Ruta no encontrada.");
+        if (stopId != null && stops.findById(stopId).isEmpty())
+            throw new ResourceNotFoundException("Paradero no encontrado.");
+
+        List<Route> found = routes.searchAvailableRoutes(institutionId, normalizedDistrict, routeId, stopId);
+        if (found.isEmpty()) return List.of();
+        List<Long> routeIds = found.stream().map(Route::getId).toList();
+        Map<Long, List<RouteStop>> stopsByRoute = routeStops.findAvailableByRouteIds(routeIds).stream()
+                .collect(Collectors.groupingBy(rs -> rs.getRoute().getId(), LinkedHashMap::new,
+                        Collectors.toList()));
+        Map<Long, List<RouteSchedule>> schedulesByRoute = schedules
+                .findByRouteIdInAndActiveTrueOrderByRouteCodeAscDayOfWeekAscDepartureTimeAsc(routeIds).stream()
+                .collect(Collectors.groupingBy(sc -> sc.getRoute().getId(), LinkedHashMap::new,
+                        Collectors.toList()));
+        Set<Long> favoriteIds = favorites.findByStudentId(student.getId()).stream()
+                .map(favorite -> favorite.getRoute().getId()).collect(Collectors.toSet());
+
+        List<GroupCandidate> candidates = found.stream().map(route -> new GroupCandidate(route,
+                stopsByRoute.getOrDefault(route.getId(), List.of()),
+                schedulesByRoute.getOrDefault(route.getId(), List.of()),
+                groupedTimeDifference(stopsByRoute.getOrDefault(route.getId(), List.of()),
+                        schedulesByRoute.getOrDefault(route.getId(), List.of()), normalizedDistrict, stopId, time)))
+                .toList();
+        if (time != null) {
+            int best = candidates.stream().mapToInt(GroupCandidate::differenceMinutes).min().orElse(0);
+            candidates = candidates.stream().filter(candidate -> candidate.differenceMinutes() == best).toList();
+        }
+        return candidates.stream().map(candidate -> groupedOut(candidate,
+                favoriteIds.contains(candidate.route().getId()))).toList();
     }
 
     @Transactional(readOnly = true)
@@ -415,6 +470,46 @@ public class StudentAccessService {
         return Math.abs(first.toSecondOfDay() - second.toSecondOfDay()) / 60;
     }
 
+    private static void validateSearchIds(Long institutionId, Long routeId, Long stopId) {
+        if (institutionId != null && institutionId <= 0)
+            throw new BusinessRuleException("institutionId debe ser positivo.");
+        if (routeId != null && routeId <= 0)
+            throw new BusinessRuleException("routeId debe ser positivo.");
+        if (stopId != null && stopId <= 0)
+            throw new BusinessRuleException("stopId debe ser positivo.");
+    }
+
+    private static int groupedTimeDifference(List<RouteStop> routeStops, List<RouteSchedule> schedules,
+                                             String district, Long stopId, LocalTime time) {
+        if (time == null) return 0;
+        int maxOrder = routeStops.stream().mapToInt(RouteStop::getStopOrder).max().orElse(Integer.MAX_VALUE);
+        return routeStops.stream()
+                .filter(rs -> stopId != null ? stopId.equals(rs.getStop().getId())
+                        : district != null ? district.equalsIgnoreCase(rs.getStop().getDistrict())
+                        : rs.getStopOrder() < maxOrder)
+                .flatMap(rs -> schedules.stream().map(schedule -> schedule.getDepartureTime()
+                        .plusMinutes(rs.getEstimatedMinutesFromStart())))
+                .mapToInt(pickup -> minuteDifference(pickup, time))
+                .min().orElse(Integer.MAX_VALUE);
+    }
+
+    private static CatalogResponses.GroupedRouteSearch groupedOut(GroupCandidate candidate, boolean favorite) {
+        Route route = candidate.route();
+        Institution institution = route.getInstitution();
+        String displayName = institution.getCampusName() == null || institution.getCampusName().isBlank()
+                ? institution.getName() : institution.getName() + " — " + institution.getCampusName();
+        var institutionOut = new CatalogResponses.RouteSearchInstitution(institution.getId(),
+                institution.getName(), institution.getCampusName(), displayName, institution.getDistrict());
+        var stopsOut = candidate.stops().stream().map(rs -> new CatalogResponses.RouteSearchStop(
+                rs.getStop().getId(), rs.getStop().getName(), rs.getStop().getAddress(),
+                rs.getStop().getDistrict(), rs.getStopOrder(), rs.getEstimatedMinutesFromStart())).toList();
+        var schedulesOut = candidate.schedules().stream().map(schedule ->
+                new CatalogResponses.RouteSearchSchedule(schedule.getId(), schedule.getDayOfWeek(),
+                        schedule.getDepartureTime(), schedule.getEstimatedArrivalTime())).toList();
+        return new CatalogResponses.GroupedRouteSearch(route.getId(), route.getCode(), route.getName(),
+                route.getOrigin(), route.getDestination(), institutionOut, stopsOut, schedulesOut, favorite);
+    }
+
     private static String hash(String value) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -426,6 +521,8 @@ public class StudentAccessService {
 
     private record SearchCandidate(RouteSearchProjection projection, LocalTime estimatedPickupTime,
                                    int differenceMinutes, Long distanceMeters) {}
+    private record GroupCandidate(Route route, List<RouteStop> stops, List<RouteSchedule> schedules,
+                                  int differenceMinutes) {}
     private record PickupOption(java.time.DayOfWeek dayOfWeek, LocalTime departureTime,
                                 LocalTime pickupTime) {}
 }

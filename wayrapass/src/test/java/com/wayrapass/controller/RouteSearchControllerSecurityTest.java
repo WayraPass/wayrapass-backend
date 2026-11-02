@@ -98,4 +98,37 @@ class RouteSearchControllerSecurityTest {
                         .value("La solicitud contiene parámetros inválidos o incompletos."))
                 .andExpect(jsonPath("$.path").value("/api/routes/search"));
     }
+
+    @Test
+    void groupedSearchForwardsAllHumanFilters() throws Exception {
+        when(studentAccessService.searchGroupedRoutes(25L, 5L, "San Miguel", 101L,
+                LocalTime.of(9, 0))).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/routes/search/grouped")
+                        .with(user("student@wayrapass.test").roles("STUDENT"))
+                        .param("institutionId", "25")
+                        .param("routeId", "5")
+                        .param("district", "San Miguel")
+                        .param("stopId", "101")
+                        .param("time", "09:00"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+
+        verify(studentAccessService).searchGroupedRoutes(25L, 5L, "San Miguel", 101L,
+                LocalTime.of(9, 0));
+    }
+
+    @Test
+    void legacySearchAcceptsStopIdWithoutCoordinates() throws Exception {
+        when(studentAccessService.searchRoutes(1L, null, "San Miguel", 101L,
+                null, null, null)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/routes/search")
+                        .with(user("student@wayrapass.test").roles("STUDENT"))
+                        .param("institutionId", "1")
+                        .param("district", "San Miguel")
+                        .param("stopId", "101"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+    }
 }
