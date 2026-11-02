@@ -55,6 +55,12 @@ public class TripQueryController {
         return service.familyUpcomingTrips(studentId);
     }
 
+    @GetMapping("/api/trips/me/upcoming")
+    @PreAuthorize("hasRole('STUDENT')")
+    public List<TripQueryResponses.UpcomingTrip> myUpcomingTrips() {
+        return service.myUpcomingTrips();
+    }
+
     @GetMapping("/api/trips/me/current")
     @PreAuthorize("hasRole('STUDENT')")
     public TripQueryResponses.CurrentTripResponse myCurrentTrip() {

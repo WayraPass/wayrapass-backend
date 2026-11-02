@@ -102,6 +102,15 @@ public class TripQueryService {
     @Transactional
     public List<TripQueryResponses.UpcomingTrip> familyUpcomingTrips(Long studentId) {
         Student student = studentAccess.requireFamilyStudent(studentId);
+        return upcomingTrips(student);
+    }
+
+    @Transactional
+    public List<TripQueryResponses.UpcomingTrip> myUpcomingTrips() {
+        return upcomingTrips(studentAccess.requireCurrentStudent());
+    }
+
+    private List<TripQueryResponses.UpcomingTrip> upcomingTrips(Student student) {
         Instant now = clock.instant();
         return currentEnrollment(student.getId())
                 .filter(enrollment -> enrollment.getStatus() == EnrollmentStatus.ACTIVE)
@@ -161,11 +170,22 @@ public class TripQueryService {
                         vehicle.getId(), vehicle.getPlate(), vehicle.getBrand(), vehicle.getModel()),
                 new TripQueryResponses.AssignedStop(
                         stop.getId(), stop.getName(), stop.getAddress(), stop.getDistrict()),
+                currentBoarding(trip.getId(), selection.enrollment().getStudent().getId()),
                 locationStatus(trip.getId(), now),
                 stopArrivalEstimate(trip, stop, now),
                 universityArrivalEstimate(trip, now),
                 driverCredential(trip.getDriver())
         );
+    }
+
+    private TripQueryResponses.CurrentBoarding currentBoarding(Long tripId, Long studentId) {
+        return boardings.findByTripIdAndStudentId(tripId, studentId)
+                .map(boarding -> new TripQueryResponses.CurrentBoarding(
+                        boarding.getStatus() == BoardingStatus.CONFIRMED,
+                        boarding.getBoardedAt(),
+                        boarding.getStop().getName()
+                ))
+                .orElseGet(() -> new TripQueryResponses.CurrentBoarding(false, null, null));
     }
 
     private TripQueryResponses.LocationStatus locationStatus(Long tripId, Instant now) {

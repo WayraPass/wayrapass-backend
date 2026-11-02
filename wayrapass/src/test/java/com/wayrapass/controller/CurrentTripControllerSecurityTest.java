@@ -15,6 +15,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
+import java.time.Instant;
+import java.util.List;
 
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.containsString;
@@ -54,6 +56,47 @@ class CurrentTripControllerSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.available").value(false))
                 .andExpect(jsonPath("$.trip").doesNotExist());
+    }
+
+    @Test
+    void upcomingTripsWithoutAuthenticationReturnsUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/trips/me/upcoming"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"FAMILY", "DRIVER", "COORDINATOR"})
+    void onlyStudentCanReadOwnUpcomingTrips(String role) throws Exception {
+        mockMvc.perform(get("/api/trips/me/upcoming")
+                        .with(user("user@wayrapass.test").roles(role)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void studentCanReadOwnUpcomingTrips() throws Exception {
+        when(service.myUpcomingTrips()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/trips/me/upcoming")
+                        .with(user("student@wayrapass.test").roles("STUDENT")))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+    }
+
+    @Test
+    void studentUpcomingTripsResponseUsesTheExistingDto() throws Exception {
+        when(service.myUpcomingTrips()).thenReturn(List.of(new TripQueryResponses.UpcomingTrip(
+                41L, 5L, "R-12", "Ruta Centro", "Próceres", "Campus Centro",
+                "Universidad Wayra", "Campus Centro", 8L, "Paradero Próceres",
+                Instant.parse("2026-11-04T12:00:00Z"), Instant.parse("2026-11-04T13:30:00Z"),
+                TripStatus.SCHEDULED, false, false, null
+        )));
+
+        mockMvc.perform(get("/api/trips/me/upcoming")
+                        .with(user("student@wayrapass.test").roles("STUDENT")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].tripId").value(41))
+                .andExpect(jsonPath("$[0].status").value("SCHEDULED"))
+                .andExpect(jsonPath("$[0].stopName").value("Paradero Próceres"));
     }
 
     @ParameterizedTest

@@ -220,6 +220,62 @@ class TripQueryServiceTest {
     }
 
     @Test
+    void studentGetsOwnFutureScheduledTripsWithoutSupplyingStudentId() {
+        when(studentAccess.requireCurrentStudent()).thenReturn(student);
+        when(enrollmentLifecycle.currentForUse(2L)).thenReturn(Optional.of(enrollment()));
+        Trip upcoming = trip(46L, Instant.now().plus(Duration.ofHours(2)), TripStatus.SCHEDULED);
+        when(trips.findUpcomingByRouteAndStatus(eq(5L), eq(TripStatus.SCHEDULED), any()))
+                .thenReturn(List.of(upcoming));
+
+        var result = service.myUpcomingTrips();
+
+        assertEquals(List.of(46L), result.stream().map(item -> item.tripId()).toList());
+        verify(studentAccess).requireCurrentStudent();
+        verify(studentAccess, never()).requireFamilyStudent(anyLong());
+    }
+
+    @Test
+    void studentWithActiveEnrollmentAndNoFutureTripsGetsEmptyList() {
+        when(studentAccess.requireCurrentStudent()).thenReturn(student);
+        when(enrollmentLifecycle.currentForUse(2L)).thenReturn(Optional.of(enrollment()));
+        when(trips.findUpcomingByRouteAndStatus(eq(5L), eq(TripStatus.SCHEDULED), any()))
+                .thenReturn(List.of());
+
+        assertEquals(List.of(), service.myUpcomingTrips());
+    }
+
+    @Test
+    void currentBoardingTripIsNotReturnedAsUpcoming() {
+        when(studentAccess.requireCurrentStudent()).thenReturn(student);
+        when(enrollmentLifecycle.currentForUse(2L)).thenReturn(Optional.of(enrollment()));
+        Trip boarding = trip(47L, Instant.now().minus(Duration.ofMinutes(15)), TripStatus.BOARDING);
+        when(trips.findUpcomingByRouteAndStatus(eq(5L), eq(TripStatus.SCHEDULED), any()))
+                .thenReturn(List.of(boarding));
+
+        assertEquals(List.of(), service.myUpcomingTrips());
+    }
+
+    @Test
+    void studentWithSuspendedEnrollmentGetsEmptyUpcomingTrips() {
+        when(studentAccess.requireCurrentStudent()).thenReturn(student);
+        StudentRouteEnrollment suspended = enrollment();
+        suspended.setStatus(EnrollmentStatus.SUSPENDED);
+        when(enrollmentLifecycle.currentForUse(2L)).thenReturn(Optional.of(suspended));
+
+        assertEquals(List.of(), service.myUpcomingTrips());
+        verifyNoInteractions(trips);
+    }
+
+    @Test
+    void studentWithNoActiveEnrollmentGetsEmptyUpcomingTrips() {
+        when(studentAccess.requireCurrentStudent()).thenReturn(student);
+        when(enrollmentLifecycle.currentForUse(2L)).thenReturn(Optional.empty());
+
+        assertTrue(service.myUpcomingTrips().isEmpty());
+        verifyNoInteractions(trips);
+    }
+
+    @Test
     void upcomingTripsExposeCurrentStopAndReassignmentIndicator() {
         when(studentAccess.requireFamilyStudent(2L)).thenReturn(student);
         when(enrollmentLifecycle.currentForUse(2L)).thenReturn(Optional.of(enrollment()));
