@@ -111,6 +111,7 @@ public class StudentAccessService {
             enrollment.setStatus(EnrollmentStatus.ENDED);
             enrollment.setValidUntil(lifecycle.today());
         });
+        if (currentEnrollment.isPresent()) enrollments.flush();
         StudentRouteEnrollment enrollment = new StudentRouteEnrollment();
         enrollment.setStudent(student);
         enrollment.setRoute(lockedRoute);

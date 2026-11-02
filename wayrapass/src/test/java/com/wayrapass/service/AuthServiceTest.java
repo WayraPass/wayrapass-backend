@@ -4,7 +4,6 @@ import com.wayrapass.dto.request.ForgotPasswordRequest;
 import com.wayrapass.dto.request.ResetPasswordRequest;
 import com.wayrapass.dto.request.UserRequestDTO;
 import com.wayrapass.exception.BusinessRuleException;
-import com.wayrapass.exception.PasswordRecoveryMailException;
 import com.wayrapass.mapper.UserMapper;
 import com.wayrapass.model.PasswordResetToken;
 import com.wayrapass.model.Role;
@@ -49,7 +48,7 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = service(false);
+        service = service();
         user = new User();
         user.setId(10L);
         user.setFullName("Ana Torres");
@@ -78,21 +77,20 @@ class AuthServiceTest {
     }
 
     @Test
-    void forgotPasswordStoresOnlyHashAndInvokesMailWithRawToken() {
+    void forgotPasswordStoresOnlyHashAndReturnsRawTokenWithoutMail() {
         when(users.findByEmailIgnoreCase("ana@example.com")).thenReturn(Optional.of(user));
 
         var response = service.forgotPassword(new ForgotPasswordRequest(" ANA@example.com "));
 
         ArgumentCaptor<PasswordResetToken> stored = ArgumentCaptor.forClass(PasswordResetToken.class);
-        ArgumentCaptor<String> rawToken = ArgumentCaptor.forClass(String.class);
         verify(resetTokens).saveAndFlush(stored.capture());
-        verify(recoveryMail).sendPasswordReset(eq(user), rawToken.capture());
-        assertEquals(43, rawToken.getValue().length());
-        assertEquals(sha256(rawToken.getValue()), stored.getValue().getTokenHash());
-        assertNotEquals(rawToken.getValue(), stored.getValue().getTokenHash());
+        assertNotNull(response.developmentToken());
+        assertEquals(43, response.developmentToken().length());
+        assertEquals(sha256(response.developmentToken()), stored.getValue().getTokenHash());
+        assertNotEquals(response.developmentToken(), stored.getValue().getTokenHash());
         assertTrue(stored.getValue().getExpiresAt().isAfter(Instant.now().plusSeconds(890)));
-        assertNull(response.developmentToken());
         assertFalse(response.message().contains(user.getEmail()));
+        verifyNoInteractions(recoveryMail);
     }
 
     @Test
@@ -104,21 +102,6 @@ class AuthServiceTest {
         assertEquals("Si el correo existe, se generó un enlace de recuperación.", response.message());
         assertNull(response.developmentToken());
         verifyNoInteractions(resetTokens, recoveryMail);
-    }
-
-    @Test
-    void mailFailureRemovesGeneratedTokenAndRaisesControlledException() {
-        when(users.findByEmailIgnoreCase("ana@example.com")).thenReturn(Optional.of(user));
-        doThrow(new PasswordRecoveryMailException(new IllegalStateException("SMTP unavailable")))
-                .when(recoveryMail).sendPasswordReset(eq(user), anyString());
-
-        assertThrows(PasswordRecoveryMailException.class,
-                () -> service.forgotPassword(new ForgotPasswordRequest("ana@example.com")));
-
-        ArgumentCaptor<PasswordResetToken> token = ArgumentCaptor.forClass(PasswordResetToken.class);
-        verify(resetTokens).saveAndFlush(token.capture());
-        verify(resetTokens).delete(token.getValue());
-        verify(resetTokens).flush();
     }
 
     @Test
@@ -136,6 +119,19 @@ class AuthServiceTest {
         assertEquals("999888777", user.getPhone());
         verify(resetTokens).save(token);
         verify(users).save(user);
+    }
+
+    @Test
+    void invalidResetTokenIsRejected() {
+        when(resetTokens.findByTokenHash(sha256("invalid-token"))).thenReturn(Optional.empty());
+
+        BusinessRuleException error = assertThrows(BusinessRuleException.class,
+                () -> service.resetPassword(new ResetPasswordRequest("invalid-token", "new-secure-password")));
+
+        assertEquals("Token inválido o vencido.", error.getMessage());
+        verifyNoInteractions(passwords);
+        verify(resetTokens, never()).save(any());
+        verify(users, never()).save(any());
     }
 
     @Test
@@ -163,10 +159,10 @@ class AuthServiceTest {
         verifyNoInteractions(passwords);
     }
 
-    private AuthService service(boolean exposeResetToken) {
+    private AuthService service() {
         return new AuthService(
                 users, students, institutions, resetTokens, passwords,
-                authenticationManager, jwt, mapper, recoveryMail, exposeResetToken);
+                authenticationManager, jwt, mapper);
     }
 
     private PasswordResetToken token(Instant expiresAt, Instant usedAt) {

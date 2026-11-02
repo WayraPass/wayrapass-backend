@@ -146,6 +146,40 @@ class StudentAccessServiceHardeningTest {
     }
 
     @Test
+    void enrollmentChangeFlushesEndedEnrollmentBeforeCreatingReplacement() {
+        prepareStudentEnrollment();
+        Stop currentStop = new Stop();
+        currentStop.setId(7L);
+        Stop targetStop = new Stop();
+        targetStop.setId(8L);
+        StudentRouteEnrollment currentEnrollment = new StudentRouteEnrollment();
+        currentEnrollment.setStudent(student);
+        currentEnrollment.setRoute(route(4L, institution, RouteStatus.ACTIVE));
+        currentEnrollment.setStop(currentStop);
+        currentEnrollment.setStatus(EnrollmentStatus.ACTIVE);
+        when(routes.findById(5L)).thenReturn(Optional.of(route));
+        when(stops.findById(8L)).thenReturn(Optional.of(targetStop));
+        when(routeStops.findByRouteIdAndStopId(5L, 8L))
+                .thenReturn(Optional.of(routeStop(route, targetStop, true)));
+        when(enrollments.findCurrentForUpdate(any(), any())).thenReturn(Optional.of(currentEnrollment));
+        when(lifecycle.lockRouteAndRequireSeat(5L, false)).thenReturn(route);
+        when(lifecycle.today()).thenReturn(java.time.LocalDate.of(2026, 11, 1));
+        when(enrollments.save(any(StudentRouteEnrollment.class))).thenAnswer(invocation -> {
+            StudentRouteEnrollment saved = invocation.getArgument(0);
+            saved.setId(51L);
+            saved.setValidFrom(java.time.LocalDate.of(2026, 11, 1));
+            return saved;
+        });
+
+        service.enroll(new OperationalRequests.Enrollment(5L, 8L));
+
+        assertEquals(EnrollmentStatus.ENDED, currentEnrollment.getStatus());
+        var order = inOrder(enrollments);
+        order.verify(enrollments).flush();
+        order.verify(enrollments).save(any(StudentRouteEnrollment.class));
+    }
+
+    @Test
     void enrollmentRejectsRouteFromDifferentInstitution() {
         prepareStudentEnrollment();
         Route foreignRoute = route(5L, institution(99L), RouteStatus.ACTIVE);

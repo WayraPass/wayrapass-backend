@@ -9,7 +9,6 @@ import com.wayrapass.dto.response.PasswordResetResponse;
 import com.wayrapass.exception.AccountLockedException;
 import com.wayrapass.exception.BusinessRuleException;
 import com.wayrapass.exception.ConflictException;
-import com.wayrapass.exception.PasswordRecoveryMailException;
 import com.wayrapass.exception.ResourceNotFoundException;
 import com.wayrapass.exception.UnauthorizedException;
 import com.wayrapass.mapper.UserMapper;
@@ -24,7 +23,6 @@ import com.wayrapass.repository.StudentRepository;
 import com.wayrapass.repository.UserRepository;
 import com.wayrapass.security.JwtService;
 import com.wayrapass.security.UserPrincipal;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
@@ -58,8 +56,6 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwt;
     private final UserMapper mapper;
-    private final PasswordRecoveryMailService recoveryMail;
-    private final boolean exposeResetToken;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public AuthService(
@@ -70,9 +66,7 @@ public class AuthService {
             PasswordEncoder passwords,
             AuthenticationManager authenticationManager,
             JwtService jwt,
-            UserMapper mapper,
-            PasswordRecoveryMailService recoveryMail,
-            @Value("${app.password-reset.expose-development-token:false}") boolean exposeResetToken) {
+            UserMapper mapper) {
         this.users = users;
         this.students = students;
         this.institutions = institutions;
@@ -81,8 +75,6 @@ public class AuthService {
         this.authenticationManager = authenticationManager;
         this.jwt = jwt;
         this.mapper = mapper;
-        this.recoveryMail = recoveryMail;
-        this.exposeResetToken = exposeResetToken;
     }
 
     @Transactional
@@ -175,17 +167,6 @@ public class AuthService {
         resetToken.setExpiresAt(Instant.now().plusSeconds(RESET_TOKEN_SECONDS));
         resetTokens.saveAndFlush(resetToken);
 
-        try {
-            recoveryMail.sendPasswordReset(found.get(), rawToken);
-        } catch (RuntimeException exception) {
-            resetTokens.delete(resetToken);
-            resetTokens.flush();
-            if (exception instanceof PasswordRecoveryMailException mailException) {
-                throw mailException;
-            }
-            throw new PasswordRecoveryMailException(exception);
-        }
-
         return resetResponse(rawToken);
     }
 
@@ -206,7 +187,7 @@ public class AuthService {
     private PasswordResetResponse resetResponse(String rawToken) {
         return new PasswordResetResponse(
                 RESET_RESPONSE_MESSAGE,
-                exposeResetToken ? rawToken : null
+                rawToken
         );
     }
 

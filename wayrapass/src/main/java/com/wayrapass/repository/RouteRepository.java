@@ -25,7 +25,7 @@ public interface RouteRepository extends JpaRepository<Route,Long>{
    and s.active = true
    and sc.active = true
    and i.id = :institutionId
-   and (:district is null or lower(s.district) = lower(:district))
+   and (:district is null or lower(s.district) = lower(cast(:district as string)))
    and (:routeId is null or r.id = :routeId)
   order by r.code, rs.stopOrder, sc.dayOfWeek, sc.departureTime
   """)

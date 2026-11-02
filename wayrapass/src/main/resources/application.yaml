@@ -40,7 +40,5 @@ app:
     interpolation-steps-per-segment: ${WAYRAPASS_SIMULATOR_INTERPOLATION_STEPS:5}
   mail:
     from: ${MAIL_FROM:no-reply@wayrapass.local}
-  password-reset:
-    expose-development-token: ${EXPOSE_PASSWORD_RESET_TOKEN:false}
   location:
     stale-after-seconds: ${LOCATION_STALE_AFTER_SECONDS:120}

@@ -78,6 +78,20 @@ class RouteRepositorySearchTest {
         assertEquals("R-12", matches.getFirst().getRouteCode());
     }
 
+    @Test
+    void searchWithoutOptionalFiltersReturnsAvailableOptions() {
+        Route available = route("R-ALL", RouteStatus.ACTIVE);
+        Stop stop = stop("Paradero general", "Lima", true);
+        routeStop(available, stop, true, 1, 10);
+        schedule(available, true, LocalTime.of(8, 0));
+        entityManager.flush();
+
+        var matches = routes.searchAvailableOptions(institution.getId(), null, null);
+
+        assertEquals(1, matches.size());
+        assertEquals("R-ALL", matches.getFirst().getRouteCode());
+    }
+
     private Route route(String code, RouteStatus status) {
         Route route = new Route();
         route.setInstitution(institution);

@@ -149,6 +149,20 @@ class C3ControllerSecurityTest {
     }
 
     @Test
+    void incidentWithUnknownEnumReturnsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/incidents")
+                        .with(user("driver@wayrapass.test").roles("DRIVER"))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("""
+                                {"tripId":30,"type":"TRAFFIC","description":"Congestión",
+                                 "delayMinutes":10,"priority":"NORMAL"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("La solicitud contiene un cuerpo JSON inválido."));
+    }
+
+    @Test
     void nonDriverCannotReportIncident() throws Exception {
         mockMvc.perform(post("/api/incidents")
                         .with(user("student@wayrapass.test").roles("STUDENT"))
