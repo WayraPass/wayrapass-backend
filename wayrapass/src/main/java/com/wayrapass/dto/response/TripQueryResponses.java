@@ -101,6 +101,7 @@ public final class TripQueryResponses {
             Instant actualEndAt,
             VehicleSummary vehicle,
             AssignedStop assignedStop,
+            CurrentBoarding boarding,
             LocationStatus location,
             StopArrivalEstimate stopArrival,
             UniversityArrivalEstimate universityArrival,
@@ -112,6 +113,9 @@ public final class TripQueryResponses {
     }
 
     public record AssignedStop(Long stopId,String name,String address,String district) {
+    }
+
+    public record CurrentBoarding(boolean confirmed,Instant boardedAt,String stopName) {
     }
 
     public enum LocationFreshness {

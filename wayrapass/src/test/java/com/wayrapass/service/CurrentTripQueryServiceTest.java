@@ -110,6 +110,48 @@ class CurrentTripQueryServiceTest {
     }
 
     @Test
+    void currentTripReportsBoardingAsNotConfirmedWhenStudentHasNotBoarded() {
+        Trip trip = trip(40L, TripStatus.BOARDING, now.minusSeconds(60));
+        prepareStudentCurrent(List.of(trip));
+        when(boardings.findByTripIdAndStudentId(40L, 2L)).thenReturn(Optional.empty());
+
+        var boarding = service.myCurrentTrip().trip().boarding();
+
+        assertFalse(boarding.confirmed());
+        assertNull(boarding.boardedAt());
+        assertNull(boarding.stopName());
+    }
+
+    @Test
+    void currentTripReportsAuthenticatedStudentsConfirmedBoarding() {
+        Trip trip = trip(40L, TripStatus.BOARDING, now.minusSeconds(60));
+        Boarding confirmed = boarding(trip, student, stop, now.minusSeconds(30));
+        prepareStudentCurrent(List.of(trip));
+        when(boardings.findByTripIdAndStudentId(40L, 2L)).thenReturn(Optional.of(confirmed));
+
+        var boarding = service.myCurrentTrip().trip().boarding();
+
+        assertTrue(boarding.confirmed());
+        assertEquals(now.minusSeconds(30), boarding.boardedAt());
+        assertEquals("Próceres", boarding.stopName());
+    }
+
+    @Test
+    void anotherStudentsBoardingDoesNotConfirmAuthenticatedStudent() {
+        Trip trip = trip(40L, TripStatus.BOARDING, now.minusSeconds(60));
+        Student otherStudent = new Student();
+        otherStudent.setId(99L);
+        Boarding otherBoarding = boarding(trip, otherStudent, stop, now.minusSeconds(30));
+        prepareStudentCurrent(List.of(trip));
+        when(boardings.findByTripIdAndStudentId(eq(40L), anyLong())).thenAnswer(invocation ->
+                invocation.<Long>getArgument(1).equals(99L) ? Optional.of(otherBoarding) : Optional.empty());
+
+        assertFalse(service.myCurrentTrip().trip().boarding().confirmed());
+        verify(boardings).findByTripIdAndStudentId(40L, 2L);
+        verify(boardings, never()).findByTripIdAndStudentId(40L, 99L);
+    }
+
+    @Test
     void inProgressHasPriorityOverBoardingAndScheduled() {
         Trip scheduled = trip(41L, TripStatus.SCHEDULED, now.plusSeconds(3600));
         Trip boarding = trip(42L, TripStatus.BOARDING, now.minusSeconds(300));
@@ -429,6 +471,17 @@ class CurrentTripQueryServiceTest {
         location.setLongitude(new BigDecimal("-77.036500"));
         location.setRecordedAt(now.minusSeconds(30));
         return location;
+    }
+
+    private Boarding boarding(Trip trip, Student boardingStudent, Stop boardingStop, Instant boardedAt) {
+        Boarding boarding = new Boarding();
+        boarding.setId(90L);
+        boarding.setTrip(trip);
+        boarding.setStudent(boardingStudent);
+        boarding.setStop(boardingStop);
+        boarding.setBoardedAt(boardedAt);
+        boarding.setStatus(BoardingStatus.CONFIRMED);
+        return boarding;
     }
 
     private RouteStop routeStop(int estimatedMinutes) {
