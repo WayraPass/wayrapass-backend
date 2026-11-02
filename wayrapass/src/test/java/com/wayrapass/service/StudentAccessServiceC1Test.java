@@ -207,6 +207,128 @@ class StudentAccessServiceC1Test {
     }
 
     @Test
+    void studentCanEnrollInRouteFromItsPrimaryInstitution() {
+        authenticateStudent();
+        prepareValidSelection(route, stop);
+        when(enrollments.findCurrentForUpdate(2L, List.of(EnrollmentStatus.ACTIVE, EnrollmentStatus.SUSPENDED)))
+                .thenReturn(Optional.empty());
+        when(lifecycle.lockRouteAndRequireSeat(5L, false)).thenReturn(route);
+        mockEnrollmentSave();
+
+        var result = service.enroll(new OperationalRequests.Enrollment(5L, 8L));
+
+        assertEquals(5L, result.routeId());
+        assertEquals(8L, result.stopId());
+        assertEquals(EnrollmentStatus.ACTIVE, result.status());
+    }
+
+    @Test
+    void studentCanEnrollInRouteFromAnotherInstitution() {
+        authenticateStudent();
+        Institution otherInstitution = institution(2L, true);
+        Route otherRoute = route(6L, otherInstitution, RouteStatus.ACTIVE, "PUCP-01");
+        Stop otherStop = stop(9L, "Plaza San Miguel", "San Miguel", true);
+        prepareValidSelection(otherRoute, otherStop);
+        when(enrollments.findCurrentForUpdate(2L, List.of(EnrollmentStatus.ACTIVE, EnrollmentStatus.SUSPENDED)))
+                .thenReturn(Optional.empty());
+        when(lifecycle.lockRouteAndRequireSeat(6L, false)).thenReturn(otherRoute);
+        mockEnrollmentSave();
+
+        var result = service.enroll(new OperationalRequests.Enrollment(6L, 9L));
+
+        assertEquals(6L, result.routeId());
+        assertEquals(9L, result.stopId());
+        assertEquals(EnrollmentStatus.ACTIVE, result.status());
+        assertNotEquals(student.getInstitution().getId(), otherRoute.getInstitution().getId());
+    }
+
+    @Test
+    void studentCanChangeFromPrimaryInstitutionRouteToAnotherInstitution() {
+        authenticateStudent();
+        Institution otherInstitution = institution(2L, true);
+        Route otherRoute = route(6L, otherInstitution, RouteStatus.ACTIVE, "PUCP-01");
+        Stop otherStop = stop(9L, "Plaza San Miguel", "San Miguel", true);
+        StudentRouteEnrollment previous = enrollment(30L, route, stop, EnrollmentStatus.ACTIVE);
+        prepareValidSelection(otherRoute, otherStop);
+        when(enrollments.findCurrentForUpdate(2L, List.of(EnrollmentStatus.ACTIVE, EnrollmentStatus.SUSPENDED)))
+                .thenReturn(Optional.of(previous));
+        when(lifecycle.lockRouteAndRequireSeat(6L, false)).thenReturn(otherRoute);
+        when(lifecycle.today()).thenReturn(LocalDate.now());
+        mockEnrollmentSave();
+
+        var result = service.enroll(new OperationalRequests.Enrollment(6L, 9L));
+
+        assertEquals(EnrollmentStatus.ENDED, previous.getStatus());
+        assertEquals(LocalDate.now(), previous.getValidUntil());
+        assertEquals(EnrollmentStatus.ACTIVE, result.status());
+        assertEquals(6L, result.routeId());
+    }
+
+    @Test
+    void studentCanChangeFromSecondInstitutionRouteToThirdInstitution() {
+        authenticateStudent();
+        Institution secondInstitution = institution(2L, true);
+        Institution thirdInstitution = institution(3L, true);
+        Route secondRoute = route(6L, secondInstitution, RouteStatus.ACTIVE, "PUCP-01");
+        Route thirdRoute = route(7L, thirdInstitution, RouteStatus.ACTIVE, "UTEC-01");
+        Stop secondStop = stop(9L, "Plaza San Miguel", "San Miguel", true);
+        Stop thirdStop = stop(10L, "Plaza Grau", "Lima", true);
+        StudentRouteEnrollment previous = enrollment(30L, secondRoute, secondStop, EnrollmentStatus.ACTIVE);
+        prepareValidSelection(thirdRoute, thirdStop);
+        when(enrollments.findCurrentForUpdate(2L, List.of(EnrollmentStatus.ACTIVE, EnrollmentStatus.SUSPENDED)))
+                .thenReturn(Optional.of(previous));
+        when(lifecycle.lockRouteAndRequireSeat(7L, false)).thenReturn(thirdRoute);
+        when(lifecycle.today()).thenReturn(LocalDate.now());
+        mockEnrollmentSave();
+
+        var result = service.enroll(new OperationalRequests.Enrollment(7L, 10L));
+
+        assertEquals(EnrollmentStatus.ENDED, previous.getStatus());
+        assertEquals(EnrollmentStatus.ACTIVE, result.status());
+        assertEquals(7L, result.routeId());
+        assertNotEquals(secondRoute.getInstitution().getId(), thirdRoute.getInstitution().getId());
+    }
+
+    @Test
+    void enrollmentRejectsStopThatDoesNotBelongToSelectedRoute() {
+        authenticateStudent();
+        when(routes.findById(5L)).thenReturn(Optional.of(route));
+        when(stops.findById(8L)).thenReturn(Optional.of(stop));
+        when(routeStops.findByRouteIdAndStopId(5L, 8L)).thenReturn(Optional.empty());
+
+        assertThrows(BusinessRuleException.class,
+                () -> service.enroll(new OperationalRequests.Enrollment(5L, 8L)));
+        verifyNoInteractions(enrollments);
+    }
+
+    @Test
+    void enrollmentRejectsMissingRouteAsNotFound() {
+        authenticateStudent();
+        when(routes.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.enroll(new OperationalRequests.Enrollment(999L, 8L)));
+        verifyNoInteractions(stops, routeStops, enrollments);
+    }
+
+    @Test
+    void enrollmentPreservesCapacityConflictForAnyInstitution() {
+        authenticateStudent();
+        Institution otherInstitution = institution(2L, true);
+        Route fullRoute = route(6L, otherInstitution, RouteStatus.ACTIVE, "PUCP-01");
+        Stop otherStop = stop(9L, "Plaza San Miguel", "San Miguel", true);
+        prepareValidSelection(fullRoute, otherStop);
+        when(enrollments.findCurrentForUpdate(2L, List.of(EnrollmentStatus.ACTIVE, EnrollmentStatus.SUSPENDED)))
+                .thenReturn(Optional.empty());
+        when(lifecycle.lockRouteAndRequireSeat(6L, false))
+                .thenThrow(new ConflictException("La ruta ya no dispone de cupos."));
+
+        assertThrows(ConflictException.class,
+                () -> service.enroll(new OperationalRequests.Enrollment(6L, 9L)));
+        verify(enrollments, never()).save(any());
+    }
+
+    @Test
     void sameRouteAndStopIsRejectedWithoutEndingCurrentEnrollment() {
         authenticateStudent();
         StudentRouteEnrollment currentEnrollment = enrollment(30L, route, stop, EnrollmentStatus.ACTIVE);

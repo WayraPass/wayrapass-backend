@@ -180,14 +180,29 @@ class StudentAccessServiceHardeningTest {
     }
 
     @Test
-    void enrollmentRejectsRouteFromDifferentInstitution() {
+    void enrollmentAcceptsRouteFromDifferentInstitution() {
         prepareStudentEnrollment();
         Route foreignRoute = route(5L, institution(99L), RouteStatus.ACTIVE);
+        Stop stop = new Stop();
+        stop.setId(8L);
         when(routes.findById(5L)).thenReturn(Optional.of(foreignRoute));
+        when(stops.findById(8L)).thenReturn(Optional.of(stop));
+        when(routeStops.findByRouteIdAndStopId(5L, 8L))
+                .thenReturn(Optional.of(routeStop(foreignRoute, stop, true)));
+        when(enrollments.findCurrentForUpdate(any(), any())).thenReturn(Optional.empty());
+        when(lifecycle.lockRouteAndRequireSeat(5L, false)).thenReturn(foreignRoute);
+        when(enrollments.save(any(StudentRouteEnrollment.class))).thenAnswer(invocation -> {
+            StudentRouteEnrollment saved = invocation.getArgument(0);
+            saved.setId(52L);
+            saved.setValidFrom(java.time.LocalDate.now());
+            return saved;
+        });
 
-        assertThrows(BusinessRuleException.class,
-                () -> service.enroll(new OperationalRequests.Enrollment(5L, 8L)));
-        verifyNoInteractions(routeStops, stops);
+        var result = service.enroll(new OperationalRequests.Enrollment(5L, 8L));
+
+        assertEquals(5L, result.routeId());
+        assertEquals(8L, result.stopId());
+        verify(enrollments).save(argThat(enrollment -> enrollment.getRoute() == foreignRoute));
     }
 
     @Test

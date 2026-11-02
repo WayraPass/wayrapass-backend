@@ -78,9 +78,8 @@ public class StudentAccessService {
         validateLocation(request.latitude(), request.longitude());
         Route route = routes.findById(request.routeId())
                 .orElseThrow(() -> new ResourceNotFoundException("Ruta no encontrada."));
-        if (route.getStatus() != RouteStatus.ACTIVE || !route.getInstitution().isActive()
-                || !route.getInstitution().getId().equals(student.getInstitution().getId())) {
-            throw new BusinessRuleException("La ruta seleccionada no está disponible para tu institución.");
+        if (route.getStatus() != RouteStatus.ACTIVE || !route.getInstitution().isActive()) {
+            throw new BusinessRuleException("La ruta seleccionada no está disponible.");
         }
         Stop stop = stops.findById(request.stopId())
                 .orElseThrow(() -> new ResourceNotFoundException("Paradero no encontrado."));
@@ -105,9 +104,8 @@ public class StudentAccessService {
                 .map(enrollment -> enrollment.getRoute().getId().equals(route.getId()))
                 .orElse(false);
         Route lockedRoute = lifecycle.lockRouteAndRequireSeat(route.getId(), alreadyOccupiesTargetRoute);
-        if (lockedRoute.getStatus() != RouteStatus.ACTIVE || !lockedRoute.getInstitution().isActive()
-                || !lockedRoute.getInstitution().getId().equals(student.getInstitution().getId())) {
-            throw new BusinessRuleException("La ruta seleccionada no está disponible para tu institución.");
+        if (lockedRoute.getStatus() != RouteStatus.ACTIVE || !lockedRoute.getInstitution().isActive()) {
+            throw new BusinessRuleException("La ruta seleccionada no está disponible.");
         }
         currentEnrollment.ifPresent(enrollment -> {
             enrollment.setStatus(EnrollmentStatus.ENDED);
