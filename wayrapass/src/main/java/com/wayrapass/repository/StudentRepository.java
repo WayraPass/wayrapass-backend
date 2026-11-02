@@ -12,6 +12,7 @@ public interface StudentRepository extends JpaRepository<Student, Long> {
     @Override
     @EntityGraph(attributePaths = {"user", "institution"})
     List<Student> findAll();
+    @EntityGraph(attributePaths = "institution")
     Optional<Student> findByUserId(Long userId);
     boolean existsByInstitutionIdAndStudentCodeIgnoreCase(Long institutionId, String studentCode);
 }
