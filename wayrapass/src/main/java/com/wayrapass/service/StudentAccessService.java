@@ -42,34 +42,50 @@ public class StudentAccessService {
     @Transactional
     public OperationalResponses.FamilyCode generateCode() {
         Student student = requireCurrentStudent();
-        String code = "%06d".formatted(new SecureRandom().nextInt(1_000_000));
-        student.setFamilyLinkCodeHash(hash(code));
+        SecureRandom random = new SecureRandom();
+        String code;
+        String codeHash;
+        do {
+            code = "%06d".formatted(random.nextInt(1_000_000));
+            codeHash = hash(code);
+        } while (students.existsByFamilyLinkCodeHash(codeHash));
+        student.setFamilyLinkCodeHash(codeHash);
         student.setFamilyLinkCodeExpiresAt(Instant.now().plusSeconds(600));
         return new OperationalResponses.FamilyCode(code, student.getFamilyLinkCodeExpiresAt());
     }
 
     @Transactional
+    public OperationalResponses.LinkedStudent linkFamily(OperationalRequests.FamilyCode request) {
+        User family = requireCurrentFamily();
+        String codeHash = hash(request.code().trim());
+        Student student = students.findByFamilyLinkCodeHash(codeHash)
+                .orElseThrow(this::invalidFamilyCode);
+        validateFamilyCode(student, request.code());
+        return linkedStudentOut(saveFamilyLink(student, family, request.relationship()));
+    }
+
+    @Transactional
     public void linkFamily(Long studentId, OperationalRequests.FamilyCode request) {
-        User family = current.require();
-        if (family.getRole() != Role.FAMILY) throw new AccessDeniedException("Solo FAMILY");
+        User family = requireCurrentFamily();
         Student student = students.findById(studentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Estudiante no encontrado."));
-        if (student.getFamilyLinkCodeHash() == null || student.getFamilyLinkCodeExpiresAt() == null
-                || !student.getFamilyLinkCodeExpiresAt().isAfter(Instant.now())
-                || !MessageDigest.isEqual(student.getFamilyLinkCodeHash().getBytes(StandardCharsets.UTF_8),
-                hash(request.code()).getBytes(StandardCharsets.UTF_8))) {
-            throw new BusinessRuleException("El código de vinculación no es válido. Solicita uno nuevo.");
-        }
+        validateFamilyCode(student, request.code());
+        saveFamilyLink(student, family, request.relationship());
+    }
+
+    private StudentFamilyLink saveFamilyLink(Student student, User family, String relationship) {
+        Long studentId = student.getId();
         StudentFamilyLink link = links.findByStudentIdAndFamilyUserId(studentId, family.getId())
                 .orElseGet(StudentFamilyLink::new);
         link.setStudent(student);
         link.setFamilyUser(family);
-        link.setRelationship(request.relationship());
+        link.setRelationship(relationship);
         link.setAuthorized(true);
         link.setRevokedAt(null);
-        links.save(link);
+        StudentFamilyLink saved = links.save(link);
         student.setFamilyLinkCodeHash(null);
         student.setFamilyLinkCodeExpiresAt(null);
+        return saved;
     }
 
     @Transactional
@@ -267,10 +283,19 @@ public class StudentAccessService {
 
     @Transactional(readOnly = true)
     public List<Long> familyStudents() {
-        User user = current.require();
-        if (user.getRole() != Role.FAMILY) throw new AccessDeniedException("Solo FAMILY");
+        User user = requireCurrentFamily();
         return links.findByFamilyUserIdAndAuthorizedTrue(user.getId()).stream()
                 .map(link -> link.getStudent().getId()).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<OperationalResponses.LinkedStudent> familyStudentSummaries() {
+        User user = requireCurrentFamily();
+        return links.findByFamilyUserIdAndAuthorizedTrue(user.getId()).stream()
+                .map(this::linkedStudentOut)
+                .sorted(Comparator.comparing(OperationalResponses.LinkedStudent::fullName,
+                        String.CASE_INSENSITIVE_ORDER))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -355,6 +380,33 @@ public class StudentAccessService {
         return new OperationalResponses.NotificationPreferences(link.getId(), link.getStudent().getId(),
                 link.isNotifyBoarding(), link.isNotifyArrival(), link.isNotifyDelay(),
                 link.isNotifyVehicleChange(), link.isNotifyIncident());
+    }
+
+    private User requireCurrentFamily() {
+        User user = current.require();
+        if (user.getRole() != Role.FAMILY) throw new AccessDeniedException("Solo FAMILY");
+        return user;
+    }
+
+    private void validateFamilyCode(Student student, String code) {
+        if (student.getFamilyLinkCodeHash() == null || student.getFamilyLinkCodeExpiresAt() == null
+                || !student.getFamilyLinkCodeExpiresAt().isAfter(Instant.now())
+                || !MessageDigest.isEqual(student.getFamilyLinkCodeHash().getBytes(StandardCharsets.UTF_8),
+                hash(code.trim()).getBytes(StandardCharsets.UTF_8))) {
+            throw invalidFamilyCode();
+        }
+    }
+
+    private BusinessRuleException invalidFamilyCode() {
+        return new BusinessRuleException("El código de vinculación no es válido. Solicita uno nuevo.");
+    }
+
+    private OperationalResponses.LinkedStudent linkedStudentOut(StudentFamilyLink link) {
+        Student student = link.getStudent();
+        Institution institution = student.getInstitution();
+        return new OperationalResponses.LinkedStudent(student.getId(), student.getUser().getFullName(),
+                student.getUser().getEmail(), institution.getName(), institution.getCampusName(),
+                link.getRelationship());
     }
 
     private String unavailableStopMessage(Long routeId, BigDecimal latitude, BigDecimal longitude,

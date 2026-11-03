@@ -15,6 +15,10 @@ import org.springframework.security.access.AccessDeniedException;
 
 import java.util.List;
 import java.util.Optional;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.HexFormat;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -101,6 +105,64 @@ class StudentAccessServiceHardeningTest {
         when(links.existsByStudentIdAndFamilyUserIdAndAuthorizedTrue(2L, 40L)).thenReturn(true);
 
         assertSame(student, service.requireFamilyStudent(2L));
+    }
+
+    @Test
+    void familyLinksStudentUsingOnlyValidCodeAndCodeBecomesSingleUse() throws Exception {
+        User family = user(40L, Role.FAMILY);
+        family.setFullName("Elena Familiar");
+        student.getUser().setFullName("Rafael Estudiante");
+        student.getUser().setEmail("rafael@edu.pe");
+        institution.setName("UPC");
+        institution.setCampusName("Monterrico");
+        student.setFamilyLinkCodeHash(codeHash("123456"));
+        student.setFamilyLinkCodeExpiresAt(Instant.now().plusSeconds(300));
+        when(current.require()).thenReturn(family);
+        when(students.findByFamilyLinkCodeHash(codeHash("123456"))).thenReturn(Optional.of(student));
+        when(links.findByStudentIdAndFamilyUserId(2L, 40L)).thenReturn(Optional.empty());
+        when(links.save(any(StudentFamilyLink.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.linkFamily(new OperationalRequests.FamilyCode("123456", "Madre"));
+
+        assertEquals(2L, result.studentId());
+        assertEquals("Rafael Estudiante", result.fullName());
+        assertEquals("UPC", result.institutionName());
+        assertNull(student.getFamilyLinkCodeHash());
+        assertNull(student.getFamilyLinkCodeExpiresAt());
+        verify(links).save(argThat(link -> link.isAuthorized() && "Madre".equals(link.getRelationship())));
+    }
+
+    @Test
+    void codeOnlyLinkRejectsInvalidCodeWithoutExposingStudents() throws Exception {
+        when(current.require()).thenReturn(user(40L, Role.FAMILY));
+        when(students.findByFamilyLinkCodeHash(codeHash("999999"))).thenReturn(Optional.empty());
+
+        BusinessRuleException error = assertThrows(BusinessRuleException.class,
+                () -> service.linkFamily(new OperationalRequests.FamilyCode("999999", "Familiar")));
+
+        assertTrue(error.getMessage().contains("no es válido"));
+        verifyNoInteractions(links);
+    }
+
+    @Test
+    void familyStudentSummariesContainOnlyAuthorizedHumanData() {
+        User family = user(40L, Role.FAMILY);
+        student.getUser().setFullName("Rafael Estudiante");
+        student.getUser().setEmail("rafael@edu.pe");
+        institution.setName("UPC");
+        institution.setCampusName("Monterrico");
+        StudentFamilyLink link = new StudentFamilyLink();
+        link.setStudent(student);
+        link.setFamilyUser(family);
+        link.setRelationship("Familiar");
+        when(current.require()).thenReturn(family);
+        when(links.findByFamilyUserIdAndAuthorizedTrue(40L)).thenReturn(List.of(link));
+
+        var result = service.familyStudentSummaries();
+
+        assertEquals(1, result.size());
+        assertEquals("Rafael Estudiante", result.getFirst().fullName());
+        assertEquals("Monterrico", result.getFirst().campusName());
     }
 
     @Test
@@ -274,5 +336,10 @@ class StudentAccessServiceHardeningTest {
 
     private boolean includesReadableEnrollmentStatuses(java.util.Collection<EnrollmentStatus> statuses) {
         return statuses.contains(EnrollmentStatus.ACTIVE) && statuses.contains(EnrollmentStatus.SUSPENDED);
+    }
+
+    private String codeHash(String code) throws Exception {
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(code.getBytes(StandardCharsets.UTF_8)));
     }
 }

@@ -2,7 +2,10 @@ package com.wayrapass.dto.response;
 import com.wayrapass.model.*; import java.math.BigDecimal; import java.time.*;
 import java.util.List;
 public final class OperationalResponses {private OperationalResponses(){}
- public record FamilyCode(String code,Instant expiresAt){} public record Enrollment(Long id,Long studentId,Long routeId,Long stopId,EnrollmentStatus status,LocalDate validFrom,LocalDate validUntil,LocalTime estimatedPickupTime){}
+ public record FamilyCode(String code,Instant expiresAt){}
+ public record LinkedStudent(Long studentId,String fullName,String email,String institutionName,String campusName,
+  String relationship){}
+ public record Enrollment(Long id,Long studentId,Long routeId,Long stopId,EnrollmentStatus status,LocalDate validFrom,LocalDate validUntil,LocalTime estimatedPickupTime){}
  public record NotificationPreferences(Long linkId,Long studentId,boolean notifyBoarding,boolean notifyArrival,
   boolean notifyDelay,boolean notifyVehicleChange,boolean notifyIncident){}
  public record EnrollmentStatusDetails(Long enrollmentId,Long routeId,Long stopId,EnrollmentStatus status,LocalDate suspendedFrom,LocalDate suspendedUntil){}

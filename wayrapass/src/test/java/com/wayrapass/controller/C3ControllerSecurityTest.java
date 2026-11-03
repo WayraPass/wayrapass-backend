@@ -39,6 +39,65 @@ class C3ControllerSecurityTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void familyCodeWithoutAuthenticationReturnsUnauthorized() throws Exception {
+        mockMvc.perform(post("/api/students/me/family-code").with(csrf()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"FAMILY", "DRIVER", "COORDINATOR"})
+    void onlyStudentCanGenerateFamilyCode(String role) throws Exception {
+        mockMvc.perform(post("/api/students/me/family-code")
+                        .with(user("user@wayrapass.test").roles(role)).with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"STUDENT", "DRIVER", "COORDINATOR"})
+    void onlyFamilyCanReadStudentSummaries(String role) throws Exception {
+        mockMvc.perform(get("/api/family-links/me/student-summaries")
+                        .with(user("user@wayrapass.test").roles(role)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void familyCanLinkByCodeWithoutKnowingStudentId() throws Exception {
+        when(studentAccessService.linkFamily(any())).thenReturn(new OperationalResponses.LinkedStudent(
+                2L, "Rafael Estudiante", "rafael@edu.pe", "UPC", "Monterrico", "Familiar"));
+
+        mockMvc.perform(post("/api/family-links")
+                        .with(user("family@wayrapass.test").roles("FAMILY"))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("{\"code\":\"123456\",\"relationship\":\"Familiar\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.studentId").value(2))
+                .andExpect(jsonPath("$.fullName").value("Rafael Estudiante"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"STUDENT", "DRIVER", "COORDINATOR"})
+    void onlyFamilyCanLinkByCode(String role) throws Exception {
+        mockMvc.perform(post("/api/family-links")
+                        .with(user("user@wayrapass.test").roles(role))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("{\"code\":\"123456\",\"relationship\":\"Familiar\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void invalidLinkBodyReturnsFieldErrors() throws Exception {
+        mockMvc.perform(post("/api/family-links")
+                        .with(user("family@wayrapass.test").roles("FAMILY"))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("{\"code\":\"\",\"relationship\":\"Familiar\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.code").exists());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"STUDENT", "DRIVER", "COORDINATOR"})
     void onlyFamilyCanManageNotificationPreferences(String role) throws Exception {
