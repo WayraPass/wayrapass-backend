@@ -43,6 +43,7 @@ class OperationalServiceHardeningTest {
     @Mock AiActionRequestRepository aiRequests;
     @Mock StudentAccessService studentAccess;
     @Mock EnrollmentLifecycleService enrollmentLifecycle;
+    @Mock TripLifecycleService tripLifecycle;
     @InjectMocks OperationalService service;
 
     private Route route;
@@ -235,8 +236,7 @@ class OperationalServiceHardeningTest {
 
         service.status(30L, TripStatus.BOARDING);
 
-        assertEquals(TripStatus.BOARDING, trip.getStatus());
-        assertEquals(VehicleOperationalStatus.IN_SERVICE, vehicle.getOperationalStatus());
+        verify(tripLifecycle).transition(trip, TripStatus.BOARDING);
     }
 
     @Test
@@ -244,6 +244,8 @@ class OperationalServiceHardeningTest {
         Trip trip = trip(TripStatus.COMPLETED);
         when(trips.findByIdForUpdate(30L)).thenReturn(Optional.of(trip));
         when(current.require()).thenReturn(coordinator);
+        doThrow(new BusinessRuleException("Transición no permitida"))
+                .when(tripLifecycle).transition(trip, TripStatus.IN_PROGRESS);
 
         assertThrows(BusinessRuleException.class, () -> service.status(30L, TripStatus.IN_PROGRESS));
         assertEquals(TripStatus.COMPLETED, trip.getStatus());
@@ -254,6 +256,8 @@ class OperationalServiceHardeningTest {
         Trip trip = trip(TripStatus.CANCELLED);
         when(trips.findByIdForUpdate(30L)).thenReturn(Optional.of(trip));
         when(current.require()).thenReturn(coordinator);
+        doThrow(new BusinessRuleException("Transición no permitida"))
+                .when(tripLifecycle).transition(trip, TripStatus.BOARDING);
 
         assertThrows(BusinessRuleException.class, () -> service.status(30L, TripStatus.BOARDING));
     }
@@ -268,9 +272,7 @@ class OperationalServiceHardeningTest {
 
         service.status(30L, TripStatus.COMPLETED);
 
-        assertEquals(TripStatus.COMPLETED, trip.getStatus());
-        assertEquals(VehicleOperationalStatus.AVAILABLE, vehicle.getOperationalStatus());
-        assertNotNull(trip.getActualEndAt());
+        verify(tripLifecycle).transition(trip, TripStatus.COMPLETED);
     }
 
     @Test
@@ -282,6 +284,27 @@ class OperationalServiceHardeningTest {
 
         var result = service.incident(incidentRequest());
 
+        assertEquals(30L, result.tripId());
+        verify(incidents).save(any(Incident.class));
+    }
+
+    @Test
+    void incidentIsAcceptedAfterLifecycleMovesOwnedTripToInProgress() {
+        Trip trip = ownedTrip(TripStatus.SCHEDULED, 20L);
+        when(trips.findByIdForUpdate(30L)).thenReturn(Optional.of(trip));
+        when(current.require()).thenReturn(trip.getDriver().getUser());
+        when(current.id()).thenReturn(20L);
+        doAnswer(invocation -> {
+            trip.setStatus(invocation.getArgument(1));
+            return null;
+        }).when(tripLifecycle).transition(eq(trip), any(TripStatus.class));
+        when(incidents.save(any(Incident.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.status(30L, TripStatus.BOARDING);
+        service.status(30L, TripStatus.IN_PROGRESS);
+        var result = service.incident(incidentRequest());
+
+        assertEquals(TripStatus.IN_PROGRESS, trip.getStatus());
         assertEquals(30L, result.tripId());
         verify(incidents).save(any(Incident.class));
     }

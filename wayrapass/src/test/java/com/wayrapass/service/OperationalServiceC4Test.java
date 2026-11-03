@@ -44,6 +44,8 @@ class OperationalServiceC4Test {
     @Mock UserRepository users;
     @Mock AiActionRequestRepository aiRequests;
     @Mock StudentAccessService studentAccess;
+    @Mock EnrollmentLifecycleService enrollmentLifecycle;
+    @Mock TripLifecycleService tripLifecycle;
     @InjectMocks OperationalService service;
 
     private Route route;

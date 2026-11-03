@@ -83,12 +83,33 @@ class TripRepositoryCurrentTest {
         assertEquals("R-CURRENT", result.get(0).getRoute().getCode());
     }
 
+    @Test
+    void dueLifecycleQuerySelectsOnlyTripsWhoseNextAutomaticTransitionIsDue() {
+        Trip scheduledDue = persistedTrip(TripStatus.SCHEDULED, now.minusSeconds(60), now.plusSeconds(3600));
+        Trip boardingDue = persistedTrip(TripStatus.BOARDING, now.minusSeconds(30), now.plusSeconds(3600));
+        Trip inProgressDue = persistedTrip(TripStatus.IN_PROGRESS, now.minusSeconds(3600), now);
+        persistedTrip(TripStatus.SCHEDULED, now.plusSeconds(1), now.plusSeconds(3600));
+        persistedTrip(TripStatus.IN_PROGRESS, now.minusSeconds(60), now.plusSeconds(1));
+        persistedTrip(TripStatus.COMPLETED, now.minusSeconds(7200), now.minusSeconds(3600));
+        persistedTrip(TripStatus.CANCELLED, now.minusSeconds(7200), now.minusSeconds(3600));
+        entityManager.flush();
+
+        var result = trips.findDueLifecycleIds(now);
+
+        assertEquals(List.of(inProgressDue.getId(), scheduledDue.getId(), boardingDue.getId()), result);
+    }
+
     private void trip(TripStatus status, Instant start) {
+        persistedTrip(status, start, start.plusSeconds(3600));
+    }
+
+    private Trip persistedTrip(TripStatus status, Instant start, Instant end) {
         Trip trip = new Trip();
         trip.setRoute(route);
         trip.setStatus(status);
         trip.setScheduledStartAt(start);
-        trip.setScheduledEndAt(start.plusSeconds(3600));
+        trip.setScheduledEndAt(end);
         entityManager.persist(trip);
+        return trip;
     }
 }

@@ -42,6 +42,8 @@ class OperationalServiceC3Test {
     @Mock UserRepository users;
     @Mock AiActionRequestRepository aiRequests;
     @Mock StudentAccessService studentAccess;
+    @Mock EnrollmentLifecycleService enrollmentLifecycle;
+    @Mock TripLifecycleService tripLifecycle;
     @InjectMocks OperationalService service;
 
     private Route route;
@@ -164,23 +166,15 @@ class OperationalServiceC3Test {
     }
 
     @Test
-    void completedTripNotifiesArrivalOnlyToFamiliesThatEnabledIt() {
+    void completedTripDelegatesLifecycleTransition() {
         Trip trip = operationalTrip(TripStatus.IN_PROGRESS);
-        Student student = enrolledStudent();
-        StudentFamilyLink link = familyLink(student, true, true);
-        link.setNotifyArrival(false);
         User coordinator = user(1L, Role.COORDINATOR);
         when(current.require()).thenReturn(coordinator);
         when(trips.findByIdForUpdate(30L)).thenReturn(Optional.of(trip));
-        when(enrollments.findByRouteIdAndStatus(5L, EnrollmentStatus.ACTIVE)).thenReturn(List.of(enrollment(student)));
-        when(links.findByStudentIdAndAuthorizedTrue(2L)).thenReturn(List.of(link));
 
         service.status(30L, TripStatus.COMPLETED);
 
-        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-        verify(notifications).save(captor.capture());
-        assertEquals(30L, captor.getValue().getRecipient().getId());
-        assertEquals(NotificationType.ARRIVAL, captor.getValue().getType());
+        verify(tripLifecycle).transition(trip, TripStatus.COMPLETED);
     }
 
     @Test

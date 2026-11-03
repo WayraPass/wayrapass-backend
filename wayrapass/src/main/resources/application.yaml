@@ -42,3 +42,6 @@ app:
     from: ${MAIL_FROM:no-reply@wayrapass.local}
   location:
     stale-after-seconds: ${LOCATION_STALE_AFTER_SECONDS:120}
+  trip-lifecycle:
+    enabled: ${TRIP_LIFECYCLE_ENABLED:true}
+    interval-ms: ${TRIP_LIFECYCLE_INTERVAL_MS:30000}
