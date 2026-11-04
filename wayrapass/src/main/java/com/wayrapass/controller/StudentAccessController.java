@@ -1,10 +1,14 @@
 package com.wayrapass.controller;import com.wayrapass.dto.request.OperationalRequests;import com.wayrapass.dto.response.OperationalResponses;import com.wayrapass.service.StudentAccessService;import jakarta.validation.Valid;import lombok.RequiredArgsConstructor;import org.springframework.http.*;import org.springframework.security.access.prepost.PreAuthorize;import org.springframework.web.bind.annotation.*;import java.util.*;
 @RestController @RequiredArgsConstructor public class StudentAccessController{private final StudentAccessService s;
  @PostMapping("/api/students/me/family-code") @PreAuthorize("hasRole('STUDENT')") public OperationalResponses.FamilyCode code(){return s.generateCode();}
+ @PostMapping("/api/family-links") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasRole('FAMILY')") public OperationalResponses.LinkedStudent link(@Valid @RequestBody OperationalRequests.FamilyCode r){return s.linkFamily(r);}
  @PostMapping("/api/family-links/{studentId}") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasRole('FAMILY')") public void link(@PathVariable Long studentId,@Valid @RequestBody OperationalRequests.FamilyCode r){s.linkFamily(studentId,r);}
  @GetMapping("/api/family-links/me/students") @PreAuthorize("hasRole('FAMILY')") public List<Long> familyStudents(){return s.familyStudents();}
+ @GetMapping("/api/family-links/me/student-summaries") @PreAuthorize("hasRole('FAMILY')") public List<OperationalResponses.LinkedStudent> familyStudentSummaries(){return s.familyStudentSummaries();}
+ @GetMapping("/api/family-links/me/students/{studentId}/notification-preferences") @PreAuthorize("hasRole('FAMILY')") public OperationalResponses.NotificationPreferences preferences(@PathVariable Long studentId){return s.notificationPreferences(studentId);}
+ @PutMapping("/api/family-links/me/students/{studentId}/notification-preferences") @PreAuthorize("hasRole('FAMILY')") public OperationalResponses.NotificationPreferences updatePreferences(@PathVariable Long studentId,@Valid @RequestBody OperationalRequests.NotificationPreferences r){return s.updateNotificationPreferences(studentId,r);}
  @PostMapping("/api/enrollments/me") @PreAuthorize("hasRole('STUDENT')") public OperationalResponses.Enrollment enroll(@Valid @RequestBody OperationalRequests.Enrollment r){return s.enroll(r);}
- @GetMapping("/api/favorites/me") @PreAuthorize("hasRole('STUDENT')") public List<Long> favorites(){return s.favorites();}
+ @GetMapping("/api/favorites/me") @PreAuthorize("hasRole('STUDENT')") public List<OperationalResponses.FavoriteRoute> favorites(){return s.favorites();}
  @PostMapping("/api/favorites/me/{routeId}") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasRole('STUDENT')") public void favorite(@PathVariable Long routeId){s.favorite(routeId);}
  @DeleteMapping("/api/favorites/me/{routeId}") @ResponseStatus(HttpStatus.NO_CONTENT) @PreAuthorize("hasRole('STUDENT')") public void unfavorite(@PathVariable Long routeId){s.unfavorite(routeId);}
 }

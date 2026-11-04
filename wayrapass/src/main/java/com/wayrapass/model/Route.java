@@ -9,6 +9,7 @@ public class Route {
  @Column(nullable=false,length=200) private String origin;
  @Column(nullable=false,length=200) private String destination;
  @Column(length=500) private String description;
+ @Column(nullable=false) private int capacity;
  @Enumerated(EnumType.STRING) @Column(nullable=false,length=20) private RouteStatus status=RouteStatus.ACTIVE;
  @Column(name="created_at",nullable=false,updatable=false) private Instant createdAt;
  @Column(name="updated_at",nullable=false) private Instant updatedAt;
