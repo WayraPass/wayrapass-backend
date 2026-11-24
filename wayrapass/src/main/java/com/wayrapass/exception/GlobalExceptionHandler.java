@@ -14,6 +14,7 @@ public class GlobalExceptionHandler {
  @ExceptionHandler({ConflictException.class,DataIntegrityViolationException.class}) ResponseEntity<ApiErrorResponse> conflict(Exception e,HttpServletRequest r){return build(HttpStatus.CONFLICT,e instanceof ConflictException?e.getMessage():"La operación viola una restricción de integridad.",r,null);}
  @ExceptionHandler(ReportGenerationException.class) ResponseEntity<ApiErrorResponse> reportGeneration(ReportGenerationException e,HttpServletRequest r){return build(HttpStatus.INTERNAL_SERVER_ERROR,e.getMessage(),r,null);}
  @ExceptionHandler(PasswordRecoveryMailException.class) ResponseEntity<ApiErrorResponse> passwordRecoveryMail(PasswordRecoveryMailException e,HttpServletRequest r){return build(HttpStatus.SERVICE_UNAVAILABLE,e.getMessage(),r,null);}
+ @ExceptionHandler(WayriaUnavailableException.class) ResponseEntity<ApiErrorResponse> wayriaUnavailable(WayriaUnavailableException e,HttpServletRequest r){return build(HttpStatus.SERVICE_UNAVAILABLE,e.getMessage(),r,null);}
  @ExceptionHandler(Exception.class) ResponseEntity<ApiErrorResponse> internal(Exception e,HttpServletRequest r){return build(HttpStatus.INTERNAL_SERVER_ERROR,"Ocurrió un error interno.",r,null);}
  private ResponseEntity<ApiErrorResponse> build(HttpStatus s,String m,HttpServletRequest r,Map<String,String> f){return ResponseEntity.status(s).body(new ApiErrorResponse(Instant.now(),s.value(),s.getReasonPhrase(),m,r.getRequestURI(),f));}
 }

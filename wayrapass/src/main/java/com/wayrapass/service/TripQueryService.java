@@ -34,6 +34,15 @@ public class TripQueryService {
     @Transactional
     public TripQueryResponses.CurrentTripResponse myCurrentTrip() {
         Student student = studentAccess.requireCurrentStudent();
+        return currentTrip(student);
+    }
+
+    @Transactional
+    public TripQueryResponses.CurrentTripResponse familyCurrentTrip(Long studentId) {
+        return currentTrip(studentAccess.requireFamilyStudent(studentId));
+    }
+
+    private TripQueryResponses.CurrentTripResponse currentTrip(Student student) {
         CurrentTripSelection selection = resolveCurrentTrip(student);
         if (selection.trip() == null) {
             return new TripQueryResponses.CurrentTripResponse(
