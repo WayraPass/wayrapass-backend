@@ -99,6 +99,49 @@ class ReportServiceTest {
     }
 
     @Test
+    void routeReportUsesOnlyRouteFilteredMetrics() {
+        ReportRepository.PunctualityProjection punctuality = mock(ReportRepository.PunctualityProjection.class);
+        when(punctuality.getEvaluatedTrips()).thenReturn(8L);
+        when(punctuality.getOnTimeTrips()).thenReturn(6L);
+        when(reports.punctualityByRoute(eq("UPC-MON-SMI-01"), any(), any(), any(), any())).thenReturn(punctuality);
+        List<ReportRepository.OccupancyProjection> routeOccupancy = List.of(occupancy(5, 20), occupancy(3, 10));
+        List<ReportRepository.StopDemandProjection> routeDemand = List.of(demand(7L, "Plaza San Miguel", 5));
+        when(reports.occupancyByRoute(eq("UPC-MON-SMI-01"), any(), any(), any(), any(), any()))
+                .thenReturn(routeOccupancy);
+        when(reports.incidentCountByRoute(eq("UPC-MON-SMI-01"), any(), any(), any(), anyCollection())).thenReturn(2L);
+        when(reports.stopDemandByRoute(eq("UPC-MON-SMI-01"), any(), any(), any(), anyCollection(), any()))
+                .thenReturn(routeDemand);
+
+        var result = service.generateForRoute(
+                LocalDate.of(2026, 11, 1),
+                LocalDate.of(2026, 11, 29),
+                "upc-mon-smi-01"
+        );
+
+        assertTrue(result.hasData());
+        assertEquals(8, result.punctuality().evaluatedTrips());
+        assertEquals(6, result.punctuality().onTimeTrips());
+        assertEquals(2, result.punctuality().lateTrips());
+        assertEquals(new BigDecimal("75.00"), result.punctuality().onTimePercentage());
+        assertEquals(2, result.occupancy().evaluatedTrips());
+        assertEquals(8, result.occupancy().confirmedBoardings());
+        assertEquals(30, result.occupancy().offeredCapacity());
+        assertEquals(new BigDecimal("26.67"), result.occupancy().occupancyPercentage());
+        assertEquals(2, result.incidents().totalIncidents());
+        assertEquals(List.of("Plaza San Miguel"), result.stopDemand().stream()
+                .map(item -> item.stopName()).toList());
+
+        verify(reports).punctualityByRoute(eq("UPC-MON-SMI-01"), any(), any(), any(), any());
+        verify(reports).occupancyByRoute(eq("UPC-MON-SMI-01"), any(), any(), any(), any(), any());
+        verify(reports).incidentCountByRoute(eq("UPC-MON-SMI-01"), any(), any(), any(), anyCollection());
+        verify(reports).stopDemandByRoute(eq("UPC-MON-SMI-01"), any(), any(), any(), anyCollection(), any());
+        verify(reports, never()).punctuality(any(), any(), any(), any());
+        verify(reports, never()).occupancy(any(), any(), any(), any(), any());
+        verify(reports, never()).incidentCount(any(), any(), any(), anyCollection());
+        verify(reports, never()).stopDemand(any(), any(), any(), anyCollection(), any());
+    }
+
+    @Test
     void invertedPeriodIsRejectedBeforeQueryingRepositories() {
         assertThrows(BusinessRuleException.class, () -> service.generate(
                 LocalDate.of(2026, 10, 1),

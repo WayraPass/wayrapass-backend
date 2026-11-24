@@ -15,7 +15,7 @@ public class AgentController {
     private final AgentService agentService;
 
     @PostMapping("/api/agent/chat")
-    @PreAuthorize("hasAnyRole('STUDENT', 'FAMILY')")
+    @PreAuthorize("hasAnyRole('STUDENT', 'FAMILY', 'COORDINATOR')")
     public ChatResponse chat(@Valid @RequestBody ChatRequest request) {
         return agentService.chat(request);
     }

@@ -80,6 +80,29 @@ public class ReportService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public ReportResponses.OperationalReport generateForRoute(LocalDate from, LocalDate to, String routeCode) {
+        validateRange(from, to);
+        if (routeCode == null || routeCode.isBlank()) throw new BusinessRuleException("Debe indicar el código de ruta.");
+        Instant fromInstant = from.atStartOfDay(REPORT_ZONE).toInstant();
+        Instant toExclusive = to.plusDays(1).atStartOfDay(REPORT_ZONE).toInstant();
+        Instant now = Instant.now();
+        String code = routeCode.trim().toUpperCase(java.util.Locale.ROOT);
+        ReportRepository.PunctualityProjection row = reports.punctualityByRoute(code, fromInstant, toExclusive, now, TripStatus.COMPLETED);
+        long evaluated = row == null ? 0 : row.getEvaluatedTrips(); long onTime = row == null ? 0 : row.getOnTimeTrips();
+        ReportResponses.Punctuality punctuality = new ReportResponses.Punctuality(evaluated, onTime, evaluated - onTime, percentage(onTime, evaluated));
+        List<ReportRepository.OccupancyProjection> occupancyRows = reports.occupancyByRoute(code, fromInstant, toExclusive, now, TripStatus.COMPLETED, BoardingStatus.CONFIRMED);
+        long boardings = occupancyRows.stream().mapToLong(ReportRepository.OccupancyProjection::getConfirmedBoardings).sum();
+        long capacity = occupancyRows.stream().mapToLong(ReportRepository.OccupancyProjection::getVehicleCapacity).sum();
+        ReportResponses.Occupancy occupancy = new ReportResponses.Occupancy(occupancyRows.size(), boardings, capacity, percentage(boardings, capacity));
+        ReportResponses.Incidents incidents = new ReportResponses.Incidents(reports.incidentCountByRoute(code, fromInstant, toExclusive, now, INCIDENT_OPERATION_STATUSES));
+        List<ReportResponses.StopDemand> demand = reports.stopDemandByRoute(code, fromInstant, toExclusive, now, DEMAND_STATUSES, BoardingStatus.CONFIRMED).stream()
+                .map(item -> new ReportResponses.StopDemand(item.getStopId(), item.getStopName(), item.getConfirmedBoardings())).toList();
+        boolean hasData = evaluated > 0 || occupancy.evaluatedTrips() > 0 || incidents.totalIncidents() > 0 || !demand.isEmpty();
+        return new ReportResponses.OperationalReport(new ReportResponses.Period(from, to, REPORT_ZONE.getId()), ReportIndicator.ALL, now,
+                hasData, hasData ? null : NO_DATA_MESSAGE, punctuality, occupancy, incidents, demand);
+    }
+
     private ReportResponses.Punctuality punctuality(Instant from, Instant toExclusive, Instant now) {
         ReportRepository.PunctualityProjection result = reports.punctuality(
                 from, toExclusive, now, TripStatus.COMPLETED);

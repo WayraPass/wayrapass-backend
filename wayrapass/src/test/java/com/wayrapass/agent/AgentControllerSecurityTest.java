@@ -33,11 +33,19 @@ class AgentControllerSecurityTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"DRIVER", "COORDINATOR"})
-    void driverAndCoordinatorCannotUseWayriaInUs10(String role) throws Exception {
+    @ValueSource(strings = {"DRIVER"})
+    void driverCannotUseWayria(String role) throws Exception {
         mockMvc.perform(post("/api/agent/chat").with(user("user@test").roles(role))
                         .contentType("application/json").content("{\"message\":\"hola\"}"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void coordinatorCanUseWayriaForUs25() throws Exception {
+        when(service.chat(new ChatRequest("puntualidad"))).thenReturn(new ChatResponse("Resumen", List.of(), null));
+        mockMvc.perform(post("/api/agent/chat").with(user("coordinator@test").roles("COORDINATOR"))
+                        .contentType("application/json").content("{\"message\":\"puntualidad\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.message").value("Resumen"));
     }
 
     @Test
