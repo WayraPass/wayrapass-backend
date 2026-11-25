@@ -42,6 +42,10 @@ jwt:
   secret: ${JWT_SECRET:V2F5cmFQYXNzLWRldmVsb3BtZW50LWtleS1jaGFuZ2UtaW4tcHJvZHVjdGlvbi0yMDI2}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}
 
+wayria:
+  alerts:
+    relevant-delay-minutes: ${WAYRIA_RELEVANT_DELAY_MINUTES:20}
+
 app:
   frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:4200}
   simulator:
