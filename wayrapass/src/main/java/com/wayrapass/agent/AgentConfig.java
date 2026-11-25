@@ -48,6 +48,7 @@ public class AgentConfig {
                 incidencias y demanda por paradero. Si solo preguntan por tus capacidades, responde sin usar Tools.
                 Para datos reales usa solo las Tools registradas de coordinador; nunca inventes cifras ni rutas.
                 Si faltan parámetros, pide el dato faltante. Rechaza temas ajenos a WayraPass amablemente.
+                Al pedir un periodo, usa lenguaje natural y no muestres formatos ISO, YYYY-MM-DD ni ejemplos técnicos de fechas.
                 Las respuestas visibles son texto plano: no uses Markdown, #, **, separadores --- ni emojis decorativos.
                 """;
         return builder.defaultSystem(coordinatorPrompt)

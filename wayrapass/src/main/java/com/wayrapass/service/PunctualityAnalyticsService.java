@@ -49,8 +49,12 @@ public class PunctualityAnalyticsService {
     }
 
     public LocalDate currentWeekStart() {
-        LocalDate today = LocalDate.now(clock.withZone(SERVICE_ZONE));
+        LocalDate today = today();
         return today.minusDays(today.getDayOfWeek().getValue() - DayOfWeek.MONDAY.getValue());
+    }
+
+    public LocalDate today() {
+        return LocalDate.now(clock.withZone(SERVICE_ZONE));
     }
 
     private boolean onTime(Trip trip) {

@@ -23,6 +23,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.time.LocalDate;
 import java.time.Month;
+import java.math.BigDecimal;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
@@ -45,6 +46,7 @@ public class AgentService {
     private final ConcurrentHashMap<Long, Period> coordinatorPeriods = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, String> coordinatorRoutes = new ConcurrentHashMap<>();
     private final java.util.Set<Long> pendingCoordinatorRouteReports = ConcurrentHashMap.newKeySet();
+    private final java.util.Set<Long> pendingCoordinatorRoutePunctuality = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<Long, String> routeContexts = new ConcurrentHashMap<>();
 
     public ChatResponse chat(ChatRequest request) {
@@ -91,23 +93,46 @@ public class AgentService {
         boolean summaryIntent = asksForPunctualitySummary(normalized);
         boolean operationalReport = asksForOperationalReport(normalized);
         boolean routeAnalysis = normalized.contains("analizar") || normalized.contains("ruta") || normalized.contains("más detalles") || normalized.contains("mas detalles");
-        if (code.isPresent() && pendingCoordinatorRouteReports.remove(userId)) {
+        boolean awaitingRouteReport = code.isPresent() && pendingCoordinatorRouteReports.remove(userId);
+        boolean awaitingRoutePunctuality = code.isPresent() && pendingCoordinatorRoutePunctuality.remove(userId);
+        if (awaitingRoutePunctuality) {
             coordinatorRoutes.put(userId, code.get());
             if (explicitPeriod.isEmpty()) {
+                pendingCoordinatorRoutePunctuality.add(userId);
+                logCoordinatorIntent("PUNCTUALITY_ROUTE missing=[period]");
+                return new ChatResponse("¿De qué periodo deseas consultar la puntualidad de " + code.get() + "?", null, null, null);
+            }
+        }
+        if (awaitingRouteReport) {
+            coordinatorRoutes.put(userId, code.get());
+            if (explicitPeriod.isEmpty()) {
+                pendingCoordinatorRouteReports.add(userId);
                 logCoordinatorIntent("ROUTE_REPORT missing=[period]");
                 return new ChatResponse("¿De qué periodo deseas consultar " + code.get() + "?", null, null, null);
             }
         }
         if (routeAnalysis && code.isEmpty() && explicitPeriod.isEmpty()
                 && (normalized.contains("quiero") || normalized.contains("reporte") || normalized.contains("analizar"))) {
+            if (summaryIntent) {
+                pendingCoordinatorRoutePunctuality.add(userId);
+                logCoordinatorIntent("PUNCTUALITY_ROUTE missing=[route, period]");
+                return new ChatResponse("¿Qué ruta deseas analizar?", null, null, null);
+            }
             pendingCoordinatorRouteReports.add(userId);
             logCoordinatorIntent("ROUTE_REPORT missing=[route, period]");
             return new ChatResponse("Indícame la ruta y el periodo que deseas analizar.", null, null, null);
         }
-        if (code.isPresent() && routeAnalysis && explicitPeriod.isEmpty() && coordinatorPeriods.get(userId) == null) {
+        if (summaryIntent && code.isPresent() && explicitPeriod.isEmpty()) {
             coordinatorRoutes.put(userId, code.get());
-            logCoordinatorIntent("ROUTE_REPORT missing=[period]");
+            pendingCoordinatorRoutePunctuality.add(userId);
+            logCoordinatorIntent("PUNCTUALITY_ROUTE missing=[period]");
             return new ChatResponse("¿De qué periodo deseas consultar la puntualidad de " + code.get() + "?", null, null, null);
+        }
+        if (code.isPresent() && routeAnalysis && explicitPeriod.isEmpty()) {
+            coordinatorRoutes.put(userId, code.get());
+            pendingCoordinatorRouteReports.add(userId);
+            logCoordinatorIntent("ROUTE_REPORT missing=[period]");
+            return new ChatResponse("¿De qué periodo deseas generar el reporte operativo de " + code.get() + "?", null, null, null);
         }
         if (operationalReport && !detail) {
             if (explicitPeriod.isEmpty()) {
@@ -115,7 +140,8 @@ public class AgentService {
                 logCoordinatorIntent("REPORT_GENERAL missing=[period]");
                 return new ChatResponse("¿De qué periodo deseas generar el reporte operativo?", null, null, null);
             }
-            Period period = explicitPeriod.get();
+            Period period = effectiveOperationalPeriod(explicitPeriod.get()).orElse(null);
+            if (period == null) return noOperationalData();
             logCoordinatorIntent("OPERATIONAL_REPORT");
             var report = coordinatorTools.getOperationalReportSummary(period.from(), period.to());
             if (!report.hasData()) return new ChatResponse(report.message(), null, null, null);
@@ -130,14 +156,37 @@ public class AgentService {
                     + " abordajes confirmados sobre " + o.offeredCapacity() + " plazas (" + o.occupancyPercentage()
                     + "%). Se registraron " + i.totalIncidents() + " incidencias. " + stops, null, null, null);
         }
-        if (detail || (explicitPeriod.isPresent() && code.isEmpty() && coordinatorRoutes.containsKey(userId))) {
+        boolean pendingRouteReport = pendingCoordinatorRouteReports.contains(userId);
+        boolean pendingRoutePunctuality = pendingCoordinatorRoutePunctuality.contains(userId);
+        if (detail || (explicitPeriod.isPresent() && code.isEmpty() && coordinatorRoutes.containsKey(userId))
+                || (code.isPresent() && explicitPeriod.isPresent() && (pendingRouteReport || awaitingRouteReport || pendingRoutePunctuality || awaitingRoutePunctuality))) {
             String routeCode = code.orElseGet(() -> coordinatorRoutes.get(userId));
             Period period = explicitPeriod.or(() -> Optional.ofNullable(coordinatorPeriods.get(userId))).orElse(null);
             if (period == null) {
                 logCoordinatorIntent("PUNCTUALITY_DETAIL_MISSING_PERIOD");
                 return new ChatResponse("¿De qué periodo deseas consultar la puntualidad de " + routeCode + "?", null, null, null);
             }
-            if (normalized.contains("reporte") || normalized.contains("operativo")) {
+            if (pendingRoutePunctuality || awaitingRoutePunctuality) {
+                period = effectiveOperationalPeriod(period).orElse(null);
+                pendingCoordinatorRoutePunctuality.remove(userId);
+                if (period == null) return insufficientData();
+                logCoordinatorIntent("PUNCTUALITY_ROUTE route=" + routeCode + " period=" + period.from() + ".." + period.to());
+                PunctualitySummary summary = coordinatorTools.getPunctualitySummary(period.from(), period.to());
+                var route = summary.mostDelayedRoutes().stream().filter(item -> item.routeCode().equalsIgnoreCase(routeCode)).findFirst();
+                if (route.isEmpty() || route.get().evaluatedTrips() == 0) return insufficientData();
+                var item = route.get();
+                return new ChatResponse("Puntualidad de " + item.routeCode() + " del " + period.from() + " al " + period.to()
+                        + ": " + item.evaluatedTrips() + " viajes evaluados, " + (item.evaluatedTrips() - item.lateTrips())
+                        + " puntuales, " + item.lateTrips() + " con retraso y "
+                        + BigDecimal.valueOf(100).subtract(item.latePercentage()) + "% de puntualidad.", null, null, summary);
+            }
+            if (normalized.contains("reporte") || normalized.contains("operativo") || pendingRouteReport || awaitingRouteReport) {
+                period = effectiveOperationalPeriod(period).orElse(null);
+                if (period == null) {
+                    pendingCoordinatorRouteReports.remove(userId);
+                    return noOperationalData();
+                }
+                pendingCoordinatorRouteReports.remove(userId);
                 var report = coordinatorTools.getRouteOperationalReport(routeCode, period.from(), period.to());
                 if (!report.hasData()) return new ChatResponse(report.message(), null, null, null);
                 var p = report.punctuality(); var o = report.occupancy(); var i = report.incidents();
@@ -231,6 +280,16 @@ public class AgentService {
 
     private ChatResponse insufficientData() {
         return new ChatResponse("No hay información suficiente para generar un resumen de puntualidad en este periodo", null, null, null);
+    }
+
+    private Optional<Period> effectiveOperationalPeriod(Period requested) {
+        LocalDate today = analytics.today();
+        if (requested.from().isAfter(today)) return Optional.empty();
+        return Optional.of(new Period(requested.from(), requested.to().isAfter(today) ? today : requested.to()));
+    }
+
+    private ChatResponse noOperationalData() {
+        return new ChatResponse("No existen datos disponibles para el periodo seleccionado", null, null, null);
     }
 
     /** Keeps conversational output readable by the plain-text frontend without touching deterministic Tool data. */
