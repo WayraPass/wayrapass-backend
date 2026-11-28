@@ -14,6 +14,7 @@ import com.wayrapass.model.User;
 import com.wayrapass.repository.RouteRepository;
 import com.wayrapass.repository.RouteScheduleRepository;
 import com.wayrapass.repository.RouteStopRepository;
+import com.wayrapass.repository.TripRepository;
 import com.wayrapass.security.CurrentUser;
 import com.wayrapass.service.StudentAccessService;
 import com.wayrapass.service.EnrollmentLifecycleService;
@@ -28,8 +29,12 @@ import java.time.DayOfWeek;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
+import java.time.Clock;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -41,6 +46,8 @@ class WayriaReadServiceTest {
     @Mock StudentAccessService studentAccess;
     @Mock EnrollmentLifecycleService enrollmentLifecycle;
     @Mock TripQueryService tripQueries;
+    @Mock TripRepository trips;
+    @Mock Clock clock;
     @InjectMocks WayriaReadService service;
 
     @Test
@@ -115,6 +122,37 @@ class WayriaReadServiceTest {
         var status = service.currentServiceStatus(null);
         assertThat(status.studentName()).isEqualTo("Rafael");
         assertThat(status.message()).contains("No hay un viaje");
+    }
+
+    @Test
+    void nextTripUsesOnlyRoutesAvailableThroughStudentAccess() {
+        var available = new OperationalResponses.RouteSearchOption(1L, "UPC-MON-SMI-01", "San Miguel a UPC",
+                "San Miguel", "Monterrico", 1L, "UPC", "Monterrico", 11L, "Plaza San Miguel", null,
+                "San Miguel", null, null, null, 1, DayOfWeek.MONDAY, LocalTime.of(6, 15),
+                LocalTime.of(6, 15), LocalTime.of(7, 0), false, 0, false);
+        com.wayrapass.model.Trip trip = new com.wayrapass.model.Trip();
+        trip.setScheduledStartAt(Instant.parse("2026-11-27T20:20:00Z"));
+        when(clock.instant()).thenReturn(Instant.parse("2026-11-27T19:00:00Z"));
+        when(studentAccess.searchRoutes(null, null, null)).thenReturn(List.of(available));
+        when(trips.findUpcomingByRouteAndStatus(eq(1L), eq(com.wayrapass.model.TripStatus.SCHEDULED), any()))
+                .thenReturn(List.of(trip));
+
+        var result = service.nextTripForMyAvailableRoute("UPC-MON-SMI-01");
+
+        assertThat(result.routeCode()).isEqualTo("UPC-MON-SMI-01");
+        assertThat(result.scheduledStartAt()).isEqualTo(Instant.parse("2026-11-27T20:20:00Z"));
+    }
+
+    @Test
+    void activeTripProjectionUsesCurrentStudentsTripQueryOnly() {
+        var response = new TripQueryResponses.CurrentTripResponse(false, "No hay viaje activo.", null);
+        when(tripQueries.myCurrentTrip()).thenReturn(response);
+
+        var result = service.myActiveTrip();
+
+        assertThat(result.available()).isFalse();
+        assertThat(result.message()).isEqualTo("Actualmente no tienes un viaje en curso.");
+        org.mockito.Mockito.verify(tripQueries).myCurrentTrip();
     }
 
     private Route route(String code, String name) {

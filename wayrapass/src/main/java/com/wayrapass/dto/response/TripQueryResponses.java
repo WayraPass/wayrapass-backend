@@ -94,6 +94,8 @@ public final class TripQueryResponses {
             Long routeId,
             String routeCode,
             String routeName,
+            String routeOrigin,
+            String routeDestination,
             TripStatus tripStatus,
             Instant scheduledStartAt,
             Instant scheduledEndAt,
@@ -105,7 +107,8 @@ public final class TripQueryResponses {
             LocationStatus location,
             StopArrivalEstimate stopArrival,
             UniversityArrivalEstimate universityArrival,
-            DriverCredential driver
+            DriverCredential driver,
+            List<IncidentItem> incidents
     ) {
     }
 

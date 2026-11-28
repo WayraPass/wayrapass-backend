@@ -170,6 +170,8 @@ public class TripQueryService {
                 route.getId(),
                 route.getCode(),
                 route.getName(),
+                route.getOrigin(),
+                route.getDestination(),
                 trip.getStatus(),
                 trip.getScheduledStartAt(),
                 trip.getScheduledEndAt(),
@@ -183,7 +185,8 @@ public class TripQueryService {
                 locationStatus(trip.getId(), now),
                 stopArrivalEstimate(trip, stop, now),
                 universityArrivalEstimate(trip, now),
-                driverCredential(trip.getDriver())
+                driverCredential(trip.getDriver()),
+                incidentItems(trip.getId())
         );
     }
 

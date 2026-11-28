@@ -1,0 +1,17 @@
+name: wayrapass-speaches
+
+services:
+  speaches:
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    container_name: wayrapass-speaches
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      WHISPER__MODEL: Systran/faster-whisper-small
+    volumes:
+      # Keeps downloaded Faster-Whisper weights between container restarts.
+      - speaches-huggingface-cache:/home/ubuntu/.cache/huggingface/hub
+    restart: unless-stopped
+
+volumes:
+  speaches-huggingface-cache:

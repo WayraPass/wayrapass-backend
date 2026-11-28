@@ -2,8 +2,15 @@ spring:
   application:
     name: wayrapass
   config:
-    import: optional:file:.env[.properties]
+    # Maven normally runs from wayrapass/, while IntelliJ may run from the repository root.
+    # Support both without placing local credentials in source control.
+    import: optional:file:.env[.properties],optional:file:.env.speaches[.properties],optional:file:wayrapass/.env[.properties],optional:file:wayrapass/.env.speaches[.properties]
   ai:
+    model:
+      audio:
+        # The chat model is Ollama/Qwen. Voice transcription is configured separately
+        # so the OpenAI audio auto-configuration never reuses the chat connection.
+        transcription: none
     openai:
       api-key: ${AI_API_KEY:ollama}
       base-url: ${AI_BASE_URL:http://localhost:11434/v1}
@@ -43,6 +50,15 @@ jwt:
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}
 
 wayria:
+  voice:
+    transcription:
+      # Enable only after configuring a Whisper/OpenAI-compatible transcription provider.
+      # This is intentionally independent from AI_BASE_URL/AI_MODEL used by Qwen chat.
+      enabled: ${VOICE_TRANSCRIPTION_ENABLED:false}
+      base-url: ${VOICE_TRANSCRIPTION_BASE_URL:https://api.openai.com/v1}
+      api-key: ${VOICE_TRANSCRIPTION_API_KEY:}
+      model: ${VOICE_TRANSCRIPTION_MODEL:whisper-1}
+      language: ${VOICE_TRANSCRIPTION_LANGUAGE:es}
   alerts:
     relevant-delay-minutes: ${WAYRIA_RELEVANT_DELAY_MINUTES:20}
 

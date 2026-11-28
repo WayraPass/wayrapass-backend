@@ -44,6 +44,7 @@ class OperationalServiceC3Test {
     @Mock StudentAccessService studentAccess;
     @Mock EnrollmentLifecycleService enrollmentLifecycle;
     @Mock TripLifecycleService tripLifecycle;
+    @Mock DelayAlertService delayAlerts;
     @InjectMocks OperationalService service;
 
     private Route route;
@@ -109,7 +110,7 @@ class OperationalServiceC3Test {
     }
 
     @Test
-    void delayIncidentUpdatesEtaNotifiesCoordinatorAndRespectsDisabledFamilyDelayPreference() {
+    void lowDelayIncidentUsesIncidentPreferencesAndDoesNotTriggerUs11DelayAlerts() {
         Trip trip = operationalTrip(TripStatus.IN_PROGRESS);
         Student student = enrolledStudent();
         StudentFamilyLink link = familyLink(student, false, true);
@@ -129,8 +130,11 @@ class OperationalServiceC3Test {
         assertEquals(5L, result.routeId());
         assertEquals(10L, result.driverId());
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-        verify(notifications, times(2)).save(captor.capture());
-        assertEquals(List.of(30L, 50L), captor.getAllValues().stream().map(n -> n.getRecipient().getId()).sorted().toList());
+        verify(notifications, times(3)).save(captor.capture());
+        assertEquals(List.of(30L, 40L, 50L), captor.getAllValues().stream().map(n -> n.getRecipient().getId()).sorted().toList());
+        assertTrue(captor.getAllValues().stream().allMatch(n -> n.getType() == NotificationType.INCIDENT));
+        assertTrue(captor.getAllValues().stream().anyMatch(n -> n.getRecipient().getId().equals(40L)));
+        verify(delayAlerts, never()).process(any());
     }
 
     @Test

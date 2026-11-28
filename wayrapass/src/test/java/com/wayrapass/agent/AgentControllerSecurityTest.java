@@ -2,6 +2,7 @@ package com.wayrapass.agent;
 
 import com.wayrapass.agent.dto.ChatRequest;
 import com.wayrapass.agent.dto.ChatResponse;
+import com.wayrapass.service.WayriaVoiceService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -15,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -25,6 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AgentControllerSecurityTest {
     @Autowired MockMvc mockMvc;
     @MockitoBean AgentService service;
+    @MockitoBean WayriaVoiceService voiceService;
 
     @Test
     void chatWithoutJwtReturnsUnauthorized() throws Exception {
@@ -65,5 +68,24 @@ class AgentControllerSecurityTest {
         mockMvc.perform(post("/api/agent/chat").with(user("family@test").roles("FAMILY"))
                         .contentType("application/json").content("{\"message\":\"estado\"}"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void transcriptionRequiresAuthenticationAndRejectsDriver() throws Exception {
+        var audio = new org.springframework.mock.web.MockMultipartFile("audio", "question.webm", "audio/webm", "audio".getBytes());
+        mockMvc.perform(multipart("/api/agent/transcribe").file(audio))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(multipart("/api/agent/transcribe").file(audio).with(user("driver@test").roles("DRIVER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void authorizedUserReceivesOnlyTranscriptAndNeverChatsAutomatically() throws Exception {
+        when(voiceService.transcribe(org.mockito.ArgumentMatchers.any())).thenReturn("¿Cuáles son mis rutas disponibles?");
+        var audio = new org.springframework.mock.web.MockMultipartFile("audio", "question.webm", "audio/webm", "audio".getBytes());
+        mockMvc.perform(multipart("/api/agent/transcribe").file(audio).with(user("student@test").roles("STUDENT")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.transcript").value("¿Cuáles son mis rutas disponibles?"));
+        org.mockito.Mockito.verifyNoInteractions(service);
     }
 }

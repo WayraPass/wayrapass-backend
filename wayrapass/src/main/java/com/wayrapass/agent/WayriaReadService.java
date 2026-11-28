@@ -3,6 +3,8 @@ package com.wayrapass.agent;
 import com.wayrapass.agent.dto.RouteDetailSummary;
 import com.wayrapass.agent.dto.RouteSummary;
 import com.wayrapass.agent.dto.ServiceStatusSummary;
+import com.wayrapass.agent.dto.NextTripSummary;
+import com.wayrapass.agent.dto.CurrentTripSummary;
 import com.wayrapass.dto.response.TripQueryResponses;
 import com.wayrapass.model.Role;
 import com.wayrapass.model.Route;
@@ -10,6 +12,7 @@ import com.wayrapass.model.RouteStatus;
 import com.wayrapass.repository.RouteRepository;
 import com.wayrapass.repository.RouteScheduleRepository;
 import com.wayrapass.repository.RouteStopRepository;
+import com.wayrapass.repository.TripRepository;
 import com.wayrapass.security.CurrentUser;
 import com.wayrapass.service.StudentAccessService;
 import com.wayrapass.service.EnrollmentLifecycleService;
@@ -23,6 +26,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.time.Clock;
+import java.time.Instant;
 
 /** Read-only projection layer used by WayrIA tools. It never exposes JPA entities to the model. */
 @Service
@@ -37,6 +42,8 @@ public class WayriaReadService {
     private final StudentAccessService studentAccess;
     private final EnrollmentLifecycleService enrollmentLifecycle;
     private final TripQueryService tripQueries;
+    private final TripRepository trips;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public List<RouteSummary> findRoutes(String reference) {
@@ -89,6 +96,45 @@ public class WayriaReadService {
         var student = studentAccess.requireCurrentStudent();
         return enrollmentLifecycle.currentForUse(student.getId()).map(enrollment -> routeDetails(enrollment.getRoute().getCode()))
                 .orElseGet(List::of);
+    }
+
+    /** Uses the same StudentAccessService search as "Buscar rutas" before reading a future trip. */
+    @Transactional(readOnly = true)
+    public NextTripSummary nextTripForMyAvailableRoute(String routeCode) {
+        if (routeCode == null || routeCode.isBlank()) return null;
+        String requestedCode = routeCode.trim().toUpperCase(Locale.ROOT);
+        var route = studentAccess.searchRoutes(null, null, null).stream()
+                .filter(option -> requestedCode.equalsIgnoreCase(option.routeCode()))
+                .findFirst();
+        if (route.isEmpty()) return null;
+        var option = route.get();
+        Instant now = clock.instant();
+        return trips.findUpcomingByRouteAndStatus(option.routeId(), com.wayrapass.model.TripStatus.SCHEDULED, now).stream()
+                .filter(trip -> trip.getScheduledStartAt().isAfter(now))
+                .findFirst()
+                .map(trip -> new NextTripSummary(option.routeCode(), option.routeName(), option.origin(),
+                        option.destination(), trip.getScheduledStartAt()))
+                .orElse(null);
+    }
+
+    /** Projects only the authenticated student's active trip from TripQueryService, never a caller-provided ID. */
+    public CurrentTripSummary myActiveTrip() {
+        TripQueryResponses.CurrentTripResponse response = tripQueries.myCurrentTrip();
+        if (!response.available() || response.trip() == null
+                || (response.trip().tripStatus() != com.wayrapass.model.TripStatus.BOARDING
+                && response.trip().tripStatus() != com.wayrapass.model.TripStatus.IN_PROGRESS)) {
+            return new CurrentTripSummary(false, "Actualmente no tienes un viaje en curso.", null, null,
+                    null, null, null, null, null, false, null, null, null, null, List.of());
+        }
+        var trip = response.trip();
+        return new CurrentTripSummary(true, response.message(), trip.routeCode(), trip.routeName(),
+                trip.routeOrigin(), trip.routeDestination(), trip.tripStatus(), trip.scheduledStartAt(),
+                trip.actualStartAt(), trip.boarding().confirmed(), trip.boarding().boardedAt(),
+                trip.assignedStop() == null ? null : trip.assignedStop().name(),
+                trip.stopArrival() == null ? null : trip.stopArrival().estimatedArrivalAt(),
+                trip.universityArrival() == null ? null : trip.universityArrival().estimatedArrivalAt(),
+                trip.incidents().stream().map(incident -> new CurrentTripSummary.Incident(
+                        incident.description(), incident.delayMinutes())).toList());
     }
 
     @Transactional(readOnly = true)

@@ -2,6 +2,7 @@ package com.wayrapass.repository;
 import com.wayrapass.model.Route; import jakarta.persistence.LockModeType; import org.springframework.data.jpa.repository.*; import org.springframework.data.repository.query.Param; import java.util.*;
 public interface RouteRepository extends JpaRepository<Route,Long>{
  boolean existsByCodeIgnoreCase(String code);
+ Optional<Route> findByCodeIgnoreCase(String code);
  @Lock(LockModeType.PESSIMISTIC_WRITE) @Query("select r from Route r where r.id=:id")
  Optional<Route> findByIdForUpdate(@Param("id") Long id);
  @Query("""

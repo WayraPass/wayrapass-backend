@@ -2,6 +2,7 @@ package com.wayrapass.agent;
 
 import com.wayrapass.agent.tools.WayriaTools;
 import com.wayrapass.agent.tools.WayriaCoordinatorTools;
+import com.wayrapass.agent.tools.WayriaReassignmentTools;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -41,7 +42,7 @@ public class AgentConfig {
     }
 
     @Bean("coordinatorChatClient")
-    ChatClient coordinatorChatClient(ChatClient.Builder builder, WayriaCoordinatorTools tools, ChatMemory wayriaChatMemory) {
+    ChatClient coordinatorChatClient(ChatClient.Builder builder, WayriaCoordinatorTools tools, WayriaReassignmentTools reassignmentTools, ChatMemory wayriaChatMemory) {
         String coordinatorPrompt = """
                 Eres WayrIA para COORDINATOR de WayraPass. Responde siempre en español.
                 Puedes explicar que generas reportes operativos por periodo y ruta, con puntualidad, ocupación,
@@ -49,10 +50,11 @@ public class AgentConfig {
                 Para datos reales usa solo las Tools registradas de coordinador; nunca inventes cifras ni rutas.
                 Si faltan parámetros, pide el dato faltante. Rechaza temas ajenos a WayraPass amablemente.
                 Al pedir un periodo, usa lenguaje natural y no muestres formatos ISO, YYYY-MM-DD ni ejemplos técnicos de fechas.
+                Para reasignaciones, primero consulta alternativas reales y crea una propuesta; nunca ejecutes una reasignación sin confirmación explícita posterior del coordinador.
                 Las respuestas visibles son texto plano: no uses Markdown, #, **, separadores --- ni emojis decorativos.
                 """;
         return builder.defaultSystem(coordinatorPrompt)
-                .defaultTools(tools)
+                .defaultTools(tools, reassignmentTools)
                 .defaultAdvisors(MessageChatMemoryAdvisor.builder(wayriaChatMemory).build())
                 .build();
     }

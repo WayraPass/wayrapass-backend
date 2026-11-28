@@ -18,5 +18,5 @@ public class WayriaProactiveMessageService {
         WayriaProactiveMessage message = messages.findByTripIdAndRecipientIdAndType(trip.getId(), recipient.getId(), NotificationType.DELAY).orElseGet(WayriaProactiveMessage::new);
         message.setRecipient(recipient); message.setTrip(trip); message.setIncident(incident); message.setType(NotificationType.DELAY); message.setMessage(text); messages.save(message);
     }
-    @Transactional(readOnly = true) public List<ProactiveMessageResponse> mine() { return messages.findByRecipientIdOrderByCreatedAtAsc(currentUser.id()).stream().map(item -> new ProactiveMessageResponse(item.getId(), item.getTrip().getId(), item.getIncident() == null ? null : item.getIncident().getId(), item.getType(), item.getMessage(), item.getCreatedAt())).toList(); }
+    @Transactional(readOnly = true) public List<ProactiveMessageResponse> mine() { return messages.findVisibleByRecipientId(currentUser.id(), List.of(TripStatus.SCHEDULED, TripStatus.BOARDING, TripStatus.IN_PROGRESS)).stream().map(item -> new ProactiveMessageResponse(item.getId(), item.getTrip().getId(), item.getIncident() == null ? null : item.getIncident().getId(), item.getType(), item.getMessage(), item.getCreatedAt())).toList(); }
 }

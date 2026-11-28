@@ -34,3 +34,4 @@ build/
 
 ### VARIABLES DE ENTORNO PARA EL DESPLIEGUE
 .env
+.env.speaches

@@ -354,6 +354,28 @@ class CurrentTripQueryServiceTest {
     }
 
     @Test
+    void currentTripExposesItsAssociatedIncidentsForReadOnlyConsumers() {
+        Trip trip = trip(40L, TripStatus.IN_PROGRESS, now.minusSeconds(600));
+        Incident incident = new Incident();
+        incident.setId(91L);
+        incident.setTrip(trip);
+        incident.setType(IncidentType.TRAFFIC_DELAY);
+        incident.setDescription("Tráfico por carril cerrado");
+        incident.setDelayMinutes(28);
+        incident.setPriority(IncidentPriority.HIGH);
+        incident.setStatus(IncidentStatus.OPEN);
+        incident.setCreatedAt(now.minusSeconds(120));
+        prepareStudentCurrent(List.of(trip));
+        when(incidents.findByTripIdOrderByCreatedAtAsc(40L)).thenReturn(List.of(incident));
+
+        var currentIncidents = service.myCurrentTrip().trip().incidents();
+
+        assertEquals(1, currentIncidents.size());
+        assertEquals("Tráfico por carril cerrado", currentIncidents.getFirst().description());
+        assertEquals(28, currentIncidents.getFirst().delayMinutes());
+    }
+
+    @Test
     void missingRouteStopRelationMakesStopEtaUnavailable() {
         Trip trip = trip(40L, TripStatus.BOARDING, now.minusSeconds(60));
         prepareStudentCurrent(List.of(trip));
